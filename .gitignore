@@ -1,0 +1,6 @@
+/mock
+*.exe
+debug
+debug.test
+__debug_bin
+/.vscode/launch.json
