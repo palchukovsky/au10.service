@@ -42,7 +42,7 @@ func Test_Au10_StreamWriter_Message(test *testing.T) {
 		Field1 string
 		Field2 int
 	}{Field1: "test field value", Field2: 543})
-	assert.Nil(err)
+	assert.NoError(err)
 
 	message := <-messagesChan
 	assert.Equal("test topic 2", message.Topic)
@@ -53,9 +53,9 @@ func Test_Au10_StreamWriter_Message(test *testing.T) {
 	}
 	var messageValueEncoded []byte
 	messageValueEncoded, err = message.Value.Encode()
-	assert.Nil(err)
+	assert.NoError(err)
 	err = json.Unmarshal(messageValueEncoded, &messageValue)
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.Equal("test field value", messageValue.Field1)
 	assert.Equal(543, messageValue.Field2)
 

@@ -21,6 +21,8 @@ type Factory interface {
 	CreateUsers(Factory) (Users, error)
 	CreateUser(login string, membership Membership, rights []Rights) (User, error)
 
+	CreatePosts(service Service) Posts
+
 	CreateSaramaProducer(service Service) (sarama.AsyncProducer, error)
 	CreateSaramaConsumer(service Service) (sarama.ConsumerGroup, error)
 }

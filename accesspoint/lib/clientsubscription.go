@@ -17,9 +17,10 @@ type subscriptionInfo struct {
 ////////////////////////////////////////////////////////////////////////////////
 
 func (client *client) runLogSubscription(
+	log au10.Log,
 	stream AccessPoint_ReadLogServer) error {
 
-	subscription, err := client.service.au10.Log().Subscribe()
+	subscription, err := log.Subscribe()
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,7 @@ func (client *client) runSubscription(
 	atomic.AddUint32(&client.service.numberOfSubscribers, 1)
 	atomic.AddUint32(&info.numberOfSubscribers, 1)
 
-	client.logInfo("Subscribed to %s (%d/%d subscriptions).",
+	client.LogInfo("Subscribed to %s (%d/%d subscriptions).",
 		info.name, info.numberOfSubscribers, client.service.numberOfSubscribers)
 
 	var err error
@@ -109,12 +110,12 @@ func (client *client) runSubscription(
 	atomic.AddUint32(&client.service.numberOfSubscribers, ^uint32(0))
 
 	if err != nil {
-		return client.createError(codes.Internal,
+		return client.CreateError(codes.Internal,
 			`subscription to %s error: %s" (%d/%d subscribers)`,
 			info.name, err, info.numberOfSubscribers,
 			client.service.numberOfSubscribers)
 	}
-	client.logInfo("Subscription to %s canceled (%d/%d subscribers).",
+	client.LogInfo("Subscription to %s canceled (%d/%d subscribers).",
 		info.name, info.numberOfSubscribers, client.service.numberOfSubscribers)
 	return nil
 }

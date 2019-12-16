@@ -126,7 +126,7 @@ func (test *streamReaderTest) createSubscription(errChan chan<- error) (
 	if test.assert.NotNil(subscription) == false {
 		return nil, nil
 	}
-	if test.assert.Nil(err) == false {
+	if test.assert.NoError(err) == false {
 		return nil, nil
 	}
 	test.numberOfSubscribers++
@@ -184,7 +184,7 @@ func Test_Au10_StreamReader_1Subscription(t *testing.T) {
 	defer close(errChan)
 	go func() {
 		err, isOpened := <-errChan
-		test.assert.Nil(err)
+		test.assert.NoError(err)
 		test.assert.False(isOpened)
 	}()
 
@@ -229,7 +229,7 @@ func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
 	defer close(errChan)
 	go func() {
 		err, isOpened := <-errChan
-		test.assert.Nil(err)
+		test.assert.NoError(err)
 		test.assert.False(isOpened)
 	}()
 

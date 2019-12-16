@@ -5,14 +5,12 @@ import (
 	"testing"
 
 	"bitbucket.org/au10/service/au10"
-	"bitbucket.org/au10/service/mock/au10"
+	mock_au10 "bitbucket.org/au10/service/mock/au10"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_Au10_Users_FindUser(test *testing.T) {
-	mock := gomock.NewController(test)
-	defer mock.Finish()
 	assert := assert.New(test)
 
 	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
@@ -29,23 +27,7 @@ func Test_Au10_Users_FindUser(test *testing.T) {
 	assert.NoError(err)
 }
 
-func Test_Au10_Users_FindSession(test *testing.T) {
-	mock := gomock.NewController(test)
-	defer mock.Finish()
-	assert := assert.New(test)
-
-	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
-	assert.NoError(err)
-	defer users.Close()
-
-	u, err := users.FindSession("domain_root")
-	assert.Nil(u)
-	assert.NoError(err)
-}
-
 func Test_Au10_Users_All(test *testing.T) {
-	mock := gomock.NewController(test)
-	defer mock.Finish()
 	assert := assert.New(test)
 
 	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
@@ -85,4 +67,38 @@ func Test_Au10_Users_Error(test *testing.T) {
 	users, err := au10.CreateFactory().CreateUsers(factory)
 	assert.Nil(users)
 	assert.EqualError(err, "test error")
+}
+
+func Test_Au10_Users_Auth(test *testing.T) {
+	assert := assert.New(test)
+
+	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
+	assert.NoError(err)
+	defer users.Close()
+
+	var user au10.User
+	var token *string
+	user, token, err = users.Auth("unknown")
+	assert.Nil(user)
+	assert.Nil(token)
+	assert.NoError(err)
+
+	user, token, err = users.Auth("root")
+	assert.NotNil(user)
+	assert.Equal("root", user.GetLogin())
+	assert.NotNil(token)
+	assert.NoError(err)
+
+	user, err = users.FindSession("x" + *token)
+	assert.Nil(user)
+	assert.NoError(err)
+
+	user, err = users.FindSession(*token + "x")
+	assert.Nil(user)
+	assert.NoError(err)
+
+	user, err = users.FindSession(*token)
+	assert.NotNil(user)
+	assert.NoError(err)
+	assert.Equal("root", user.GetLogin())
 }

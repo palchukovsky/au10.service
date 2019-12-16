@@ -38,7 +38,7 @@ func Test_Au10_Log(test *testing.T) {
 	log, err = au10.CreateFactory().CreateLog(service)
 	assert.NotNil(log)
 	defer log.Close()
-	assert.Nil(err)
+	assert.NoError(err)
 
 	assert.Equal(au10.Group{Domain: "", Name: ""}, log.GetMembership().Get())
 
@@ -142,7 +142,7 @@ func Test_Au10_Log(test *testing.T) {
 		return
 	}
 	defer subscription.Close()
-	assert.Nil(err)
+	assert.NoError(err)
 	if !assert.NotNil(handleSubscription) {
 		return
 	}
@@ -164,7 +164,7 @@ func Test_Au10_Log(test *testing.T) {
 				receivedRecord = true
 				messageBarrier.Done()
 			case err := <-subscription.GetErrChan():
-				assert.Nil(err)
+				assert.NoError(err)
 				assert.True(receivedRecord)
 				stopBarrier.Done()
 				return
@@ -193,7 +193,7 @@ func Test_Au10_CreateLogRecord(test *testing.T) {
 	if !assert.NotNil(record) {
 		return
 	}
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.Equal(int64(123), record.GetSequenceNumber())
 	assert.True(now.Equal(record.GetTime()))
 	assert.Equal("test log record test", record.GetText())

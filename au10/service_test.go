@@ -175,3 +175,24 @@ func Test_Au10_Service_Users(t *testing.T) {
 	test.assert.NotPanics(func() { result = test.service.GetUsers() })
 	test.assert.True(result == users)
 }
+
+func Test_Au10_Service_Posts(t *testing.T) {
+	test := createServiceTest(t)
+	defer test.close()
+
+	test.assert.PanicsWithValue("posts service is not initialized", func() {
+		test.service.GetPosts()
+	})
+
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().Close()
+	test.factory.EXPECT().CreatePosts(test.service).Return(posts)
+	test.assert.NoError(test.service.InitPosts())
+
+	test.assert.EqualError(test.service.InitPosts(),
+		"posts service already initiated")
+
+	var result au10.Posts
+	test.assert.NotPanics(func() { result = test.service.GetPosts() })
+	test.assert.True(result == posts)
+}

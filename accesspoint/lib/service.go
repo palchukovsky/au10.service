@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"bitbucket.org/au10/service/au10"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -36,7 +37,23 @@ func (service *service) Auth(
 	if err != nil {
 		return nil, err
 	}
-	return client.Auth(request)
+	var token *string
+	token, err = client.Auth(request)
+	if err != nil {
+		return nil, err
+	}
+
+	if token != nil {
+		if err := grpc.SendHeader(ctx, metadata.Pairs("auth", *token)); err != nil {
+			return nil, client.CreateError(codes.Internal,
+				`failed to set auth-metadata: "%s"`, err)
+		}
+	}
+
+	return &AuthResponse{
+			IsSuccess: token != nil,
+			Methods:   client.GetAvailableMethods()},
+		nil
 }
 
 func (service *service) ReadLog(
@@ -46,7 +63,17 @@ func (service *service) ReadLog(
 	if err != nil {
 		return err
 	}
-	return client.SubscribeToLog(request, subscription)
+	return client.ReadLog(request, subscription)
+}
+
+func (service *service) Post(
+	ctx context.Context, request *PostRequest) (*PostResponse, error) {
+
+	client, err := service.createClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Post(request)
 }
 
 func (service *service) createClient(ctx context.Context) (Client, error) {

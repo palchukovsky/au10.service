@@ -2,17 +2,25 @@ package accesspoint
 
 import (
 	fmt "fmt"
-	"strings"
 
 	"bitbucket.org/au10/service/au10"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Client is an access point connected client.
 type Client interface {
-	Auth(*AuthRequest) (*AuthResponse, error)
-	SubscribeToLog(*LogReadRequest, AccessPoint_ReadLogServer) error
+	LogError(format string, args ...interface{})
+	LogWarn(format string, args ...interface{})
+	LogInfo(format string, args ...interface{})
+	LogDebug(format string, args ...interface{})
+	CreateError(code codes.Code, descFormat string, args ...interface{}) error
+
+	GetAvailableMethods() []string
+
+	Auth(*AuthRequest) (*string, error)
+	ReadLog(*LogReadRequest, AccessPoint_ReadLogServer) error
+	Post(request *PostRequest) (*PostResponse, error)
 }
 
 // CreateClient creates new Client instance.
@@ -27,17 +35,17 @@ type client struct {
 	user    au10.User
 }
 
-func (client *client) logError(format string, args ...interface{}) {
+func (client *client) LogError(format string, args ...interface{}) {
 	client.service.au10.Log().Error(
 		client.user.GetLogin()+": "+format, args...)
 }
-func (client *client) logWarn(format string, args ...interface{}) {
+func (client *client) LogWarn(format string, args ...interface{}) {
 	client.service.au10.Log().Warn(client.user.GetLogin()+": "+format, args...)
 }
-func (client *client) logInfo(format string, args ...interface{}) {
+func (client *client) LogInfo(format string, args ...interface{}) {
 	client.service.au10.Log().Info(client.user.GetLogin()+": "+format, args...)
 }
-func (client *client) logDebug(format string, args ...interface{}) {
+func (client *client) LogDebug(format string, args ...interface{}) {
 	client.service.au10.Log().Debug(
 		client.user.GetLogin()+": "+format, args...)
 }
@@ -62,12 +70,12 @@ var starusByCode = map[codes.Code]string{
 	codes.Unauthenticated:    "UNAUTHENTICATED",
 }
 
-func (client *client) createError(
+func (client *client) CreateError(
 	code codes.Code, descFormat string, args ...interface{}) error {
 
 	desc := fmt.Sprintf(descFormat, args...)
 	if len(desc) > 0 {
-		client.logError(strings.ToUpper(desc[0:1]) + desc[1:] + ".")
+		client.LogError("Error %d: "+desc+".", code)
 	}
 	var externalDesc string
 	if client.service.au10.Log().GetMembership().IsAvailable(
@@ -77,7 +85,7 @@ func (client *client) createError(
 	} else {
 		var ok bool
 		if externalDesc, ok = starusByCode[code]; !ok {
-			client.logError("Failed to find external description for status code %d.",
+			client.LogError("Failed to find external description for status code %d.",
 				code)
 			externalDesc = "unknown error"
 		}
@@ -85,14 +93,70 @@ func (client *client) createError(
 	return status.Error(code, externalDesc)
 }
 
-func (client *client) Auth(request *AuthRequest) (*AuthResponse, error) {
-	return nil, client.createError(
-		codes.Unimplemented,
-		`called method without implementation "auth" for login "%s"`, request.Login)
+func (client *client) Auth(request *AuthRequest) (*string, error) {
+	user, token, err := client.service.au10.GetUsers().Auth(request.Login)
+	if err != nil {
+		return nil, client.CreateError(codes.Internal, `failed to auth "%s": "%s"`,
+			request.Login, err)
+	}
+	if token == nil {
+		client.LogInfo(`Wrong creds for "%s"`, request.Login)
+		return token, nil
+	}
+	client.user = user
+	client.LogInfo(`Authed "%s".`, request.Login)
+	return token, nil
 }
 
-func (client *client) SubscribeToLog(
+func (client *client) ReadLog(
 	request *LogReadRequest, stream AccessPoint_ReadLogServer) error {
 
-	return client.runLogSubscription(stream)
+	log := client.service.au10.Log()
+	if err := client.checkRights(log, "read log"); err != nil {
+		return err
+	}
+	return client.runLogSubscription(log, stream)
+}
+
+func (client *client) Post(request *PostRequest) (*PostResponse, error) {
+	if request.Post != nil {
+		return nil, client.CreateError(codes.InvalidArgument,
+			"failed to post as post not provided")
+	}
+	if len(request.Post.Text) == 0 {
+		return nil, client.CreateError(codes.InvalidArgument,
+			"failed to post as post is empty")
+	}
+	posts := client.service.au10.GetPosts()
+	err := client.checkRights(posts, "access posts")
+	if err != nil {
+		return nil, err
+	}
+	post := au10.CreatePostData()
+	post.SetText(request.Post.Text)
+	err = posts.Add(client.user, post)
+	if err != nil {
+		return nil, client.CreateError(codes.Internal, `failed to post: "%s"`, err)
+	}
+	return &PostResponse{}, nil
+}
+
+func (client *client) checkRights(entity au10.Member, action string) error {
+	if !entity.GetMembership().IsAvailable(client.user.GetRights()) {
+		return client.CreateError(codes.PermissionDenied,
+			`permission denied to %s`, action)
+	}
+	return nil
+}
+
+func (client *client) GetAvailableMethods() []string {
+	result := []string{"auth"}
+	rights := client.user.GetRights()
+	if client.service.au10.Log().GetMembership().IsAvailable(rights) {
+		result = append(result, "readLog")
+	}
+	if client.service.au10.GetPosts().GetMembership().IsAvailable(rights) {
+		result = append(result, "post")
+	}
+	return result
 }

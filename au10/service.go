@@ -31,6 +31,11 @@ type Service interface {
 	InitUsers() error
 	// GetUsers returns users service.
 	GetUsers() Users
+
+	// InitPosts inits posts service to use it in the feature.
+	InitPosts() error
+	// GetPosts returns posts service.
+	GetPosts() Posts
 }
 
 // DialOrPanic creates a new connection to Au10 service or panics with error
@@ -102,9 +107,13 @@ type service struct {
 	streamBrokers []string
 	log           Log
 	users         Users
+	posts         Posts
 }
 
 func (service *service) Close() {
+	if service.posts != nil {
+		service.posts.Close()
+	}
 	if service.users != nil {
 		service.users.Close()
 	}
@@ -138,4 +147,19 @@ func (service *service) GetUsers() Users {
 		panic("users service is not initialized")
 	}
 	return service.users
+}
+
+func (service *service) InitPosts() error {
+	if service.posts != nil {
+		return errors.New("posts service already initiated")
+	}
+	service.posts = service.factory.CreatePosts(service)
+	return nil
+}
+
+func (service *service) GetPosts() Posts {
+	if service.posts == nil {
+		panic("posts service is not initialized")
+	}
+	return service.posts
 }

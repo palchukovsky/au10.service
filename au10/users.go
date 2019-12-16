@@ -1,9 +1,14 @@
 package au10
 
+import "strings"
+
 // Users provides a user database interface.
 type Users interface {
 	// Close closes database.
 	Close()
+	// Auth verifies user credentials and creates token if credentials
+	// are correct. Returns nil instead token if credentials are wrong.
+	Auth(login string) (User, *string, error)
 	// Find tries to find a user by the login. Returns nil if the user isn't found.
 	FindUser(login string) (User, error)
 	// Find tries to find a user by session token. Returns nil if the user isn't found.
@@ -35,6 +40,15 @@ type users struct {
 
 func (*users) Close() {}
 
+func (users *users) Auth(login string) (User, *string, error) {
+	user, has := users.users[login]
+	if !has {
+		return nil, nil, nil
+	}
+	result := "token: " + user.GetLogin()
+	return user, &result, nil
+}
+
 func (users *users) FindUser(login string) (User, error) {
 	result, has := users.users[login]
 	if !has {
@@ -54,7 +68,14 @@ func (users *users) GetAll() []User {
 }
 
 func (users *users) FindSession(token string) (User, error) {
-	return nil, nil
+	if !strings.HasPrefix(token, "token: ") {
+		return nil, nil
+	}
+	result, has := users.users[token[7:]]
+	if !has {
+		return nil, nil
+	}
+	return result, nil
 }
 
 func (users *users) createUser(

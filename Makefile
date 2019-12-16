@@ -61,12 +61,14 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,au10/factory,Factory)
 	$(call gen_mock,au10/service,Service)
 	$(call gen_mock,au10/streamreader,StreamReader)
-	$(call gen_mock_aux,au10/streamwriter,StreamWriter)
+	$(call gen_mock,au10/streamwriter,StreamWriter)
 	$(call gen_mock_aux,au10/log,Log LogSubscription,$(REPO)/au10=au10/subscription.go$(COMMA)$(REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/member,Memeber)
 	$(call gen_mock,au10/group,Rights Membership)
 	$(call gen_mock_aux,au10/user,User,$(REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/users,Users)
+	$(call gen_mock_aux,au10/post,Post,$(REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/posts,Posts,$(REPO)/au10=au10/member.go)
 	
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
 

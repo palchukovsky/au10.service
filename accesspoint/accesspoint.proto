@@ -2,21 +2,26 @@ syntax = "proto3";
 
 // AccessPoint describes access point service interface.
 service AccessPoint {
-  // Auth accepts new user credentials, verifies it and sends token as metadata at success.
+  // Auth accepts new user credentials, verifies it and sends token as metadata
+  // at success.
   rpc Auth(AuthRequest) returns (AuthResponse) {}
   // ReadLog creates log records stream to read.
   rpc ReadLog(LogReadRequest) returns (stream LogRecord) {}
+  // Post pushes new post into network.
+  rpc Post(PostRequest) returns (PostResponse) {}
 }
 
 // AuthRequest describes auth request.
 message AuthRequest {
-  // User login.
+  // User login. Can be empty to get actual allowed method list.
   string login = 1;
 }
 // AuthResponse describes auth request result.
 message AuthResponse {
   // Auth success flag.
   bool isSuccess = 1;
+  // Actual allowed method list.
+   repeated string methods = 2;
 }
 
 // LogReadRequest describes log records stream reading request.
@@ -25,14 +30,29 @@ message LogReadRequest {}
 message LogRecord {
   // Global sequence number.
   int64 seqNum = 1; 
-	// Unix time in nano-seconds.
-	int64 time = 2;
-	// Text
-	string text = 3;
-	// Severity returns record severity.
-	string severity = 4;
-	// Node type name.
-	string nodeType = 5;
-	// Node instance name.
-	string nodeName = 6;
+  // Unix time in nano-seconds.
+  int64 time = 2;
+  // Text
+  string text = 3;
+  // Severity returns record severity.
+  string severity = 4;
+  // Node type name.
+  string nodeType = 5;
+  // Node instance name.
+  string nodeName = 6;
 }
+
+// Post describes post entity.
+message Post {
+  // Text.
+  string text = 1;
+}
+
+// Post describes post request.
+message PostRequest {
+  // Post.
+  Post post = 1; 
+}
+
+// Post describes post request resppnse.
+message PostResponse {}
