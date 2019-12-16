@@ -3,6 +3,7 @@ package accesspoint
 import (
 	"context"
 
+	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,7 +22,7 @@ type service struct {
 // CreateService creates new AccessPointHandler instance.
 func CreateService(
 	defaultUser au10.User,
-	au10Service au10.Service) AccessPointServer {
+	au10Service au10.Service) proto.AccessPointServer {
 
 	return &service{
 		au10:                au10Service,
@@ -31,7 +32,7 @@ func CreateService(
 
 func (service *service) Auth(
 	ctx context.Context,
-	request *AuthRequest) (*AuthResponse, error) {
+	request *proto.AuthRequest) (*proto.AuthResponse, error) {
 
 	client, err := service.createClient(ctx)
 	if err != nil {
@@ -50,14 +51,15 @@ func (service *service) Auth(
 		}
 	}
 
-	return &AuthResponse{
+	return &proto.AuthResponse{
 			IsSuccess: token != nil,
 			Methods:   client.GetAvailableMethods()},
 		nil
 }
 
 func (service *service) ReadLog(
-	request *LogReadRequest, subscription AccessPoint_ReadLogServer) error {
+	request *proto.LogReadRequest,
+	subscription proto.AccessPoint_ReadLogServer) error {
 
 	client, err := service.createClient(subscription.Context())
 	if err != nil {
@@ -67,7 +69,7 @@ func (service *service) ReadLog(
 }
 
 func (service *service) Post(
-	ctx context.Context, request *PostRequest) (*PostResponse, error) {
+	ctx context.Context, request *proto.PostRequest) (*proto.PostResponse, error) {
 
 	client, err := service.createClient(ctx)
 	if err != nil {
@@ -81,7 +83,7 @@ func (service *service) createClient(ctx context.Context) (Client, error) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if token, ok := md["auth"]; ok && len(token) == 1 {
 			var err error
-			user, err := service.au10.GetUsers().FindSession(token[0])
+			user, err = service.au10.GetUsers().FindSession(token[0])
 			if err != nil {
 				service.au10.Log().Error(
 					`Failed to find user session by token: "%s".`, err)

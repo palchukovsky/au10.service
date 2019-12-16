@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
 	codes "google.golang.org/grpc/codes"
 )
@@ -18,7 +19,7 @@ type subscriptionInfo struct {
 
 func (client *client) runLogSubscription(
 	log au10.Log,
-	stream AccessPoint_ReadLogServer) error {
+	stream proto.AccessPoint_ReadLogServer) error {
 
 	subscription, err := log.Subscribe()
 	if err != nil {
@@ -34,7 +35,7 @@ func (client *client) runLogSubscription(
 
 type logSubscription struct {
 	abstractSubscription
-	stream AccessPoint_ReadLogServer
+	stream proto.AccessPoint_ReadLogServer
 }
 
 func (subscription *logSubscription) sendNext() (bool, error) {
@@ -43,7 +44,7 @@ func (subscription *logSubscription) sendNext() (bool, error) {
 		if !isOpen {
 			return false, nil
 		}
-		return true, subscription.stream.Send(&LogRecord{
+		return true, subscription.stream.Send(&proto.LogRecord{
 			SeqNum:   record.GetSequenceNumber(),
 			Time:     record.GetTime().UnixNano(),
 			Text:     record.GetText(),

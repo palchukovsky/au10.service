@@ -54,7 +54,8 @@ install: ## Install package and all dependencies.
 
 
 stub: ## Generate stubs.
-	./build/bin/protoc -I ./accesspoint/ ./accesspoint/accesspoint.proto  --go_out=plugins=grpc:./accesspoint/lib/
+	-cd ./accesspoint/ && mkdir proto
+	./build/bin/protoc -I ./accesspoint/ ./accesspoint/accesspoint.proto  --go_out=plugins=grpc:./accesspoint/proto/
 
 
 mock: ## Generate mock interfaces for unit-tests.

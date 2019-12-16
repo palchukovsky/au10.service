@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	lib "bitbucket.org/au10/service/accesspoint/lib"
+	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
 	"google.golang.org/grpc"
+	_ "google.golang.org/grpc/encoding/gzip"
 )
 
 var (
@@ -31,6 +33,10 @@ func main() {
 		service.Log().Fatal(`Failed to start users service: "%s".`, err)
 		return
 	}
+	if err := service.InitPosts(); err != nil {
+		service.Log().Fatal(`Failed to start users service: "%s".`, err)
+		return
+	}
 	if err := service.Log().InitSubscriptionService(); err != nil {
 		service.Log().Fatal(`Failed to start log subscription service: "%s".`, err)
 		return
@@ -47,7 +53,7 @@ func main() {
 	server := grpc.NewServer()
 	defer server.Stop()
 
-	lib.RegisterAccessPointServer(server, accesspoint)
+	proto.RegisterAccessPointServer(server, accesspoint)
 
 	service.Log().Info(`Starting server on port "%d"...`, *port)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))

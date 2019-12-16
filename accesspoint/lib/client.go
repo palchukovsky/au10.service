@@ -3,6 +3,7 @@ package accesspoint
 import (
 	fmt "fmt"
 
+	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,9 +19,9 @@ type Client interface {
 
 	GetAvailableMethods() []string
 
-	Auth(*AuthRequest) (*string, error)
-	ReadLog(*LogReadRequest, AccessPoint_ReadLogServer) error
-	Post(request *PostRequest) (*PostResponse, error)
+	Auth(*proto.AuthRequest) (*string, error)
+	ReadLog(*proto.LogReadRequest, proto.AccessPoint_ReadLogServer) error
+	Post(request *proto.PostRequest) (*proto.PostResponse, error)
 }
 
 // CreateClient creates new Client instance.
@@ -93,7 +94,7 @@ func (client *client) CreateError(
 	return status.Error(code, externalDesc)
 }
 
-func (client *client) Auth(request *AuthRequest) (*string, error) {
+func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
 	user, token, err := client.service.au10.GetUsers().Auth(request.Login)
 	if err != nil {
 		return nil, client.CreateError(codes.Internal, `failed to auth "%s": "%s"`,
@@ -109,7 +110,7 @@ func (client *client) Auth(request *AuthRequest) (*string, error) {
 }
 
 func (client *client) ReadLog(
-	request *LogReadRequest, stream AccessPoint_ReadLogServer) error {
+	request *proto.LogReadRequest, stream proto.AccessPoint_ReadLogServer) error {
 
 	log := client.service.au10.Log()
 	if err := client.checkRights(log, "read log"); err != nil {
@@ -118,7 +119,9 @@ func (client *client) ReadLog(
 	return client.runLogSubscription(log, stream)
 }
 
-func (client *client) Post(request *PostRequest) (*PostResponse, error) {
+func (client *client) Post(
+	request *proto.PostRequest) (*proto.PostResponse, error) {
+
 	if request.Post != nil {
 		return nil, client.CreateError(codes.InvalidArgument,
 			"failed to post as post not provided")
@@ -138,7 +141,7 @@ func (client *client) Post(request *PostRequest) (*PostResponse, error) {
 	if err != nil {
 		return nil, client.CreateError(codes.Internal, `failed to post: "%s"`, err)
 	}
-	return &PostResponse{}, nil
+	return &proto.PostResponse{}, nil
 }
 
 func (client *client) checkRights(entity au10.Member, action string) error {
