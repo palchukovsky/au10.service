@@ -1,15 +1,11 @@
-FROM envoyproxy/envoy:v1.12.1
+ARG ENVOY
 
-ENV ACCESSPOINT_HOST=accesspoint
-ENV ACCESSPOINT_PORT=2917
+FROM ${ENVOY}
 
-COPY ./accesspoint/proxy/envoy.yaml /etc/envoy/envoy_template.yaml
-COPY ./accesspoint/proxy/cert/* /etc/envoy/cert/
+ENV HOST_LIST="[{socket_address: {address: accesspoint, port_value: 2917}}]"
 
-COPY ./accesspoint/proxy/envoy.sh /
-RUN chmod 500 /docker-entrypoint.sh
+COPY ./accesspoint/proxy/envoy_template.yaml ./accesspoint/proxy/cert ./accesspoint/proxy/envoy.sh \
+  /etc/envoy/
+RUN chmod +x /etc/envoy/envoy.sh
 
-RUN apt-get update && \
-    apt-get install gettext -y
-
-ENTRYPOINT ["/envoy.sh"]
+ENTRYPOINT ["/etc/envoy/envoy.sh"]

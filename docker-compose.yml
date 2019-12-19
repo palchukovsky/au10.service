@@ -6,18 +6,42 @@ services:
     image: wurstmeister/kafka:2.12-2.3.0
     depends_on:
       - stream-zookeeper
-    ports:
-      - 9092:9092
     environment:
       KAFKA_ADVERTISED_HOST_NAME: stream-broker
       KAFKA_ZOOKEEPER_CONNECT: stream-zookeeper:2181
   stream-zookeeper:
     image: wurstmeister/zookeeper:3.4.6
 
+  accesspoint-1:
+    image: au10/service.accesspoint:dev-latest
+    depends_on:
+      - stream-broker
+    command: -name 1 -port 2917 -stream_brokers stream-broker:9092
+  accesspoint-2:
+    image: au10/service.accesspoint:dev-latest
+    depends_on:
+      - stream-broker
+    command: -name 2 -port 2917 -stream_brokers stream-broker:9092
+  accesspoint-3:
+    image: au10/service.accesspoint:dev-latest
+    depends_on:
+      - stream-broker
+    command: -name 3 -port 2917 -stream_brokers stream-broker:9092
   accesspoint-proxy:
-    image: au10/service.accesspoint-proxy
+    image: au10/service.accesspoint-proxy:dev-latest
+    depends_on:
+      - accesspoint-1
+      - accesspoint-2
+      - accesspoint-3
     environment:
-      ACCESSPOINT_HOST: 192.168.6.169
-      ACCESSPOINT_PORT: 2917
+      HOST_LIST: >-
+        [
+          {socket_address: {address: accesspoint-1, port_value: 2917}},
+          {socket_address: {address: accesspoint-2, port_value: 2917}},
+          {socket_address: {address: accesspoint-3, port_value: 2917}}
+        ]
     ports:
-      - "8443:8443"
+      - target: 8443
+        published: 443
+        protocol: tcp
+        mode: host

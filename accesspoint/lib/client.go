@@ -25,30 +25,34 @@ type Client interface {
 }
 
 // CreateClient creates new Client instance.
-func CreateClient(user au10.User, service *service) Client {
+func CreateClient(requestID uint64, user au10.User, service *service) Client {
 	return &client{
-		service: service,
-		user:    user}
+		service:   service,
+		requestID: requestID,
+		user:      user}
 }
 
 type client struct {
-	service *service
-	user    au10.User
+	service   *service
+	requestID uint64
+	user      au10.User
 }
 
+func (client *client) getLogHeader(format string) string {
+	return fmt.Sprintf("%d.%s: ", client.requestID, client.user.GetLogin()) +
+		format
+}
 func (client *client) LogError(format string, args ...interface{}) {
-	client.service.au10.Log().Error(
-		client.user.GetLogin()+": "+format, args...)
+	client.service.au10.Log().Error(client.getLogHeader(format), args...)
 }
 func (client *client) LogWarn(format string, args ...interface{}) {
-	client.service.au10.Log().Warn(client.user.GetLogin()+": "+format, args...)
+	client.service.au10.Log().Warn(client.getLogHeader(format), args...)
 }
 func (client *client) LogInfo(format string, args ...interface{}) {
-	client.service.au10.Log().Info(client.user.GetLogin()+": "+format, args...)
+	client.service.au10.Log().Info(client.getLogHeader(format), args...)
 }
 func (client *client) LogDebug(format string, args ...interface{}) {
-	client.service.au10.Log().Debug(
-		client.user.GetLogin()+": "+format, args...)
+	client.service.au10.Log().Debug(client.getLogHeader(format), args...)
 }
 
 var starusByCode = map[codes.Code]string{

@@ -2,6 +2,7 @@ package accesspoint
 
 import (
 	"context"
+	"sync/atomic"
 
 	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
@@ -15,6 +16,7 @@ type service struct {
 	au10        au10.Service
 	defaultUser au10.User
 
+	lastRequestID       uint64
 	numberOfSubscribers uint32
 	logSubscriptionInfo subscriptionInfo
 }
@@ -28,6 +30,14 @@ func CreateService(
 		au10:                au10Service,
 		defaultUser:         defaultUser,
 		logSubscriptionInfo: subscriptionInfo{name: "log"}}
+}
+
+func (service *service) RegisterSubscriber() uint32 {
+	return atomic.AddUint32(&service.numberOfSubscribers, 1)
+}
+
+func (service *service) UnregisterSubscriber() uint32 {
+	return atomic.AddUint32(&service.numberOfSubscribers, ^uint32(0))
 }
 
 func (service *service) Auth(
@@ -96,5 +106,7 @@ func (service *service) createClient(ctx context.Context) (Client, error) {
 			user = service.defaultUser
 		}
 	}
-	return CreateClient(user, service), nil
+	client := CreateClient(atomic.AddUint64(&service.lastRequestID, 1), user,
+		service)
+	return client, nil
 }

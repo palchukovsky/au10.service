@@ -90,11 +90,11 @@ func (client *client) runSubscription(
 		stopBarrier.Done()
 	}()
 
-	atomic.AddUint32(&client.service.numberOfSubscribers, 1)
+	numberOfSubscribers := client.service.RegisterSubscriber()
 	atomic.AddUint32(&info.numberOfSubscribers, 1)
 
 	client.LogInfo("Subscribed to %s (%d/%d subscriptions).",
-		info.name, info.numberOfSubscribers, client.service.numberOfSubscribers)
+		info.name, info.numberOfSubscribers, numberOfSubscribers)
 
 	var err error
 	select {
@@ -108,16 +108,15 @@ func (client *client) runSubscription(
 	stopBarrier.Wait()
 	close(errChan)
 	atomic.AddUint32(&info.numberOfSubscribers, ^uint32(0))
-	atomic.AddUint32(&client.service.numberOfSubscribers, ^uint32(0))
+	numberOfSubscribers = client.service.UnregisterSubscriber()
 
 	if err != nil {
 		return client.CreateError(codes.Internal,
 			`subscription to %s error: %s" (%d/%d subscribers)`,
-			info.name, err, info.numberOfSubscribers,
-			client.service.numberOfSubscribers)
+			info.name, err, info.numberOfSubscribers, numberOfSubscribers)
 	}
 	client.LogInfo("Subscription to %s canceled (%d/%d subscribers).",
-		info.name, info.numberOfSubscribers, client.service.numberOfSubscribers)
+		info.name, info.numberOfSubscribers, numberOfSubscribers)
 	return nil
 }
 

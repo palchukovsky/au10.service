@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 
 	accesspoint "bitbucket.org/au10/service/accesspoint/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -18,7 +20,12 @@ func DealOrDie(address string) *Client {
 	var err error
 	var result Client
 	log.Printf(`Connecting to "%s"...`, address)
-	result.conn, err = grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("failed to load credentials: %v", err)
+	}
+	config := &tls.Config{InsecureSkipVerify: true}
+	creds := grpc.WithTransportCredentials(credentials.NewTLS(config))
+	result.conn, err = grpc.Dial(address, creds, grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("Failed to connect to access point: %v", err)
 	}

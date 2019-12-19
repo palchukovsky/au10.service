@@ -1,6 +1,6 @@
 static_resources:
   listeners:
-  - name: listener_0
+  - name: web
     address:
       socket_address: { address: 0.0.0.0, port_value: 8443 }
     filter_chains:
@@ -9,11 +9,15 @@ static_resources:
         config:
           codec_type: auto
           stat_prefix: ingress_http
+          access_log:
+            name: envoy.file_access_log
+            config:
+              path: /dev/stdout
           stream_idle_timeout: 0s
           route_config:
-            name: local_route
+            name: grpc
             virtual_hosts:
-            - name: local_service
+            - name: "root"
               domains: ["*"]
               routes:
               - match: { prefix: "/" }
@@ -36,13 +40,13 @@ static_resources:
           alpn_protocols: "h2"
           tls_certificates:
             - certificate_chain:
-                filename: "/etc/envoy/cert/dev.cert"
+                filename: "/etc/envoy/dev.cert"
               private_key:
-                filename: "/etc/envoy/cert/dev.key"
+                filename: "/etc/envoy/dev.key"
   clusters:
   - name: accesspoint
+    type: strict_dns
     connect_timeout: 0.25s
-    type: logical_dns
     http2_protocol_options: {}
     lb_policy: round_robin
-    hosts: [{ socket_address: { address: ${ACCESSPOINT_HOST}, port_value: ${ACCESSPOINT_PORT} }}]
+    hosts: ${HOST_LIST}

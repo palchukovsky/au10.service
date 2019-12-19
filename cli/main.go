@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	address = flag.String("address", "localhost:2917",
+	address = flag.String("address", "localhost:443",
 		"Au10 service access point address")
 	command = flag.String("cmd", "log", "command: log")
 	login   = flag.String("login", "", "login")

@@ -1,13 +1,20 @@
-TAG = latest
+TAG = dev-latest
 ORGANIZATION = au10
 PRODUCT = service
 REPO = bitbucket.org/au10/service
 
+GO_VER = 1.13
 PROTOC_VERSION = 3.11.1
+NODE_OS_NAME = alpine
+NODE_OS_TAG = 3.10
+ENVOY_TAG = v1.12.2
 
-export GO111MODULE = on
 GO_GET_CMD = go get -v
 
+IMAGE_TAG_PROTOC = $(ORGANIZATION)/protoc:$(PROTOC_VERSION)
+IMAGE_TAG_GOLANG = $(ORGANIZATION)/$(PRODUCT).golang:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
+IMAGE_TAG_ENVOY = $(ORGANIZATION)/envoy:${ENVOY_TAG}
+IMAGE_TAG_ACCESSPOINT = $(ORGANIZATION)/$(PRODUCT).accesspoint:$(TAG)
 IMAGE_TAG_ACCESSPOINT_PROXY = $(ORGANIZATION)/$(PRODUCT).accesspoint-proxy:$(TAG)
 
 THIS_FILE := $(lastword $(MAKEFILE_LIST))
@@ -15,6 +22,28 @@ COMMA := ,
 
 .DEFAULT_GOAL := help
 
+
+define build_docker_builder_image
+	$(eval BUILDER_SOURCE_TAG = ${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG})
+	$(eval BUILDER_TAG = $(ORGANIZATION)/$(PRODUCT).builder:$(BUILDER_SOURCE_TAG))
+	docker build \
+		--network none \
+		--build-arg PROTOC=$(IMAGE_TAG_PROTOC) \
+		--build-arg GOLANG=$(IMAGE_TAG_GOLANG) \
+		--file "$(CURDIR)/build/builder/builder.Dockerfile" \
+		--tag $(BUILDER_TAG) \
+		./
+endef
+define build_docker_cmd_image
+	$(if $(BUILDER_TAG),, $(call build_docker_builder_image))
+	docker build \
+		--build-arg NODE_OS_NAME=$(NODE_OS_NAME) \
+		--build-arg NODE_OS_TAG=$(NODE_OS_TAG) \
+		--build-arg BUILDER=$(BUILDER_TAG) \
+		--file "$(CURDIR)/$(1)/Dockerfile" \
+		--tag $(2) \
+		./
+endef
 
 define gen_mock
 	mockgen -source=$(1).go -destination=./mock/$(1).go $(2)
@@ -31,8 +60,23 @@ define make_target
 	$(MAKE) -f ./$(THIS_FILE) $(1)
 endef
 
+define echo_success
+	@echo ================================================================================
+	@echo :
+	@echo : SUCCESS: $(@)
+	@echo :
+	@echo ================================================================================
+endef
 
-.PHONY: help install stub mock build build-accesspoint-proxy
+
+.PHONY: help \
+	install install-protoc install-mock install-mock-deps \
+	stub \
+	mock \
+	build\
+		build-full \
+		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
+		build-accesspoint build-accesspoint-proxy
 
 
 help: ## Show this help.
@@ -40,25 +84,43 @@ help: ## Show this help.
 
 
 install: ## Install package and all dependencies.
-	$(GO_GET_CMD) github.com/palchukovsky/protoc-install
-	protoc-install -type cli -ver $(PROTOC_VERSION) -out ./build/bin
-	$(GO_GET_CMD) github.com/golang/protobuf/protoc-gen-go
+	$(call make_target,install-protoc)
 	$(call make_target,stub)
 
 	$(GO_GET_CMD) ./...
 
+	$(call make_target,install-mock)
+
+	go mod tidy
+
+	@$(call echo_success)
+
+install-protoc: ## Install proto compilator.
+	$(GO_GET_CMD) github.com/palchukovsky/protoc-install
+	protoc-install -type cli -ver $(PROTOC_VERSION) -out ./build/bin
+	$(GO_GET_CMD) github.com/golang/protobuf/protoc-gen-go
+	@$(call echo_success)
+
+install-mock: ## Install mock compilator and generate mock.
+	$(call make_target,install-mock-deps)
+	$(call make_target,mock)
+	@$(call echo_success)
+install-mock-deps: ## Install mock compilator components.
 	$(GO_GET_CMD) github.com/stretchr/testify/assert
 	$(GO_GET_CMD) github.com/golang/mock/gomock
 	$(GO_GET_CMD) github.com/golang/mock/mockgen
-	$(call make_target,mock)
-
+	@$(call echo_success)
 
 stub: ## Generate stubs.
 	-cd ./accesspoint/ && mkdir proto
 	./build/bin/protoc -I ./accesspoint/ ./accesspoint/accesspoint.proto  --go_out=plugins=grpc:./accesspoint/proto/
+	@$(call echo_success)
 
 
 mock: ## Generate mock interfaces for unit-tests.
+# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
+	-go list -e -compiled=true -test=true ./*
+
 	$(call gen_mock,au10/factory,Factory)
 	$(call gen_mock,au10/service,Service)
 	$(call gen_mock,au10/streamreader,StreamReader)
@@ -73,13 +135,37 @@ mock: ## Generate mock interfaces for unit-tests.
 	
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
 
+	@$(call echo_success)
 
-build: ## Build all docker images from actual local sources.
+
+build-full: ## Build all docker images from actual local sources.
+	$(call make_target,build-builder)
+	$(call make_target,build)
+	@$(call echo_success)
+
+build: ## Build docker images with all project services from actual local sources.
+	$(call make_target,build-accesspoint)
 	$(call make_target,build-accesspoint-proxy)
+	@$(call echo_success)
 
+build-accesspoint: ## Build access point node docker image from actual local sources.
+	$(call build_docker_cmd_image,accesspoint,$(IMAGE_TAG_ACCESSPOINT))
+	@$(call echo_success)
 build-accesspoint-proxy: ## Build access point proxy node docker image from actual local sources.
-	docker build \
-		--rm \
-		--file "./accesspoint/proxy/Dockerfile" \
-		--tag $(IMAGE_TAG_ACCESSPOINT_PROXY) \
-		./
+	docker build --build-arg ENVOY=$(IMAGE_TAG_ENVOY) --file "./accesspoint/proxy/Dockerfile" --tag $(IMAGE_TAG_ACCESSPOINT_PROXY) ./
+	@$(call echo_success)
+
+build-builder: ## Build all docker images for builder.
+	$(call make_target,build-builder-protoc)
+	$(call make_target,build-builder-golang)
+	$(call make_target,build-builder-envoy)
+	@$(call echo_success)
+build-builder-protoc: ## Build docker protoc-image.
+	docker build --file "./build/builder/protoc.Dockerfile" --tag $(IMAGE_TAG_PROTOC)  ./
+	@$(call echo_success)
+build-builder-golang: ## Build docker golang base node image.
+	docker build --file "./build/builder/golang.Dockerfile" --build-arg GOLANG_TAG=${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG} --tag $(IMAGE_TAG_GOLANG)  ./
+	@$(call echo_success)
+build-builder-envoy: ## Build docker envoy base image.
+	docker build --file "./accesspoint/proxy/envoy.Dockerfile" --build-arg TAG=${ENVOY_TAG} --tag $(IMAGE_TAG_ENVOY)  ./
+	@$(call echo_success)
