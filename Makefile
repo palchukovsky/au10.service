@@ -1,7 +1,8 @@
 TAG = dev-latest
 ORGANIZATION = au10
 PRODUCT = service
-REPO = bitbucket.org/au10/service
+CODE_REPO = bitbucket.org/au10/service
+IMAGES_REPO = registry.gitlab.com/$(ORGANIZATION)/
 
 GO_VER = 1.13
 PROTOC_VERSION = 3.11.1
@@ -11,11 +12,11 @@ ENVOY_TAG = v1.12.2
 
 GO_GET_CMD = go get -v
 
-IMAGE_TAG_PROTOC = $(ORGANIZATION)/protoc:$(PROTOC_VERSION)
-IMAGE_TAG_GOLANG = $(ORGANIZATION)/$(PRODUCT).golang:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
-IMAGE_TAG_ENVOY = $(ORGANIZATION)/envoy:${ENVOY_TAG}
-IMAGE_TAG_ACCESSPOINT = $(ORGANIZATION)/$(PRODUCT).accesspoint:$(TAG)
-IMAGE_TAG_ACCESSPOINT_PROXY = $(ORGANIZATION)/$(PRODUCT).accesspoint-proxy:$(TAG)
+IMAGE_TAG_PROTOC = $(IMAGES_REPO)protoc:$(PROTOC_VERSION)
+IMAGE_TAG_GOLANG = $(IMAGES_REPO)$(PRODUCT).golang:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
+IMAGE_TAG_ENVOY = $(IMAGES_REPO)envoy:${ENVOY_TAG}
+IMAGE_TAG_ACCESSPOINT = $(IMAGES_REPO)$(PRODUCT).accesspoint:$(TAG)
+IMAGE_TAG_ACCESSPOINT_PROXY = $(IMAGES_REPO)$(PRODUCT).accesspoint-proxy:$(TAG)
 
 THIS_FILE := $(lastword $(MAKEFILE_LIST))
 COMMA := ,
@@ -25,7 +26,7 @@ COMMA := ,
 
 define build_docker_builder_image
 	$(eval BUILDER_SOURCE_TAG = ${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG})
-	$(eval BUILDER_TAG = $(ORGANIZATION)/$(PRODUCT).builder:$(BUILDER_SOURCE_TAG))
+	$(eval BUILDER_TAG = $(IMAGES_REPO)$(PRODUCT).builder:$(BUILDER_SOURCE_TAG))
 	docker build \
 		--network none \
 		--build-arg PROTOC=$(IMAGE_TAG_PROTOC) \
@@ -125,13 +126,13 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,au10/service,Service)
 	$(call gen_mock,au10/streamreader,StreamReader)
 	$(call gen_mock,au10/streamwriter,StreamWriter)
-	$(call gen_mock_aux,au10/log,Log LogSubscription,$(REPO)/au10=au10/subscription.go$(COMMA)$(REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/log,Log LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/member,Memeber)
 	$(call gen_mock,au10/group,Rights Membership)
-	$(call gen_mock_aux,au10/user,User,$(REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/user,User,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/users,Users)
-	$(call gen_mock_aux,au10/post,Post,$(REPO)/au10=au10/member.go)
-	$(call gen_mock_aux,au10/posts,Posts,$(REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/post,Post,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/posts,Posts,$(CODE_REPO)/au10=au10/member.go)
 	
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
 
@@ -169,3 +170,12 @@ build-builder-golang: ## Build docker golang base node image.
 build-builder-envoy: ## Build docker envoy base image.
 	docker build --file "./accesspoint/proxy/envoy.Dockerfile" --build-arg TAG=${ENVOY_TAG} --tag $(IMAGE_TAG_ENVOY)  ./
 	@$(call echo_success)
+
+release: ## Push all images on the hub.
+	docker push $(IMAGE_TAG_ENVOY)
+	docker push $(IMAGE_TAG_ACCESSPOINT)
+	docker push $(IMAGE_TAG_ACCESSPOINT_PROXY)
+	docker push $(IMAGE_TAG_PROTOC)
+	docker push $(IMAGE_TAG_GOLANG)
+	@$(call echo_success)
+
