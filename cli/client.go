@@ -31,7 +31,7 @@ func DealOrDie(address string) *Client {
 	}
 	log.Printf("Connected.")
 	result.ctx, result.cancel = context.WithCancel(context.Background())
-	result.client = accesspoint.NewAccessPointClient(result.conn)
+	result.client = accesspoint.NewAu10Client(result.conn)
 	return &result
 }
 
@@ -40,7 +40,7 @@ type Client struct {
 	conn   *grpc.ClientConn
 	ctx    context.Context
 	cancel context.CancelFunc
-	client accesspoint.AccessPointClient
+	client accesspoint.Au10Client
 	header metadata.MD
 }
 

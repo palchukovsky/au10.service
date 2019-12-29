@@ -22,6 +22,9 @@ var (
 
 const nodeType = "accesspoint"
 
+var props = &proto.Props{
+	MaxChunkSize: 10}
+
 func main() {
 	flag.Parse()
 
@@ -49,11 +52,12 @@ func main() {
 		return
 	}
 
-	accesspoint := lib.CreateService(defaultUser, service)
+	accesspoint := lib.CreateAu10Server(
+		props, defaultUser, lib.CreateClient, lib.CreateGrpc(), service)
 	server := grpc.NewServer()
 	defer server.Stop()
 
-	proto.RegisterAccessPointServer(server, accesspoint)
+	proto.RegisterAu10Server(server, accesspoint)
 
 	service.Log().Info(`Starting server on port "%d"...`, *port)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))

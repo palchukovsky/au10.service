@@ -2,6 +2,7 @@ package accesspoint
 
 import (
 	fmt "fmt"
+	"strings"
 
 	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"bitbucket.org/au10/service/au10"
@@ -20,20 +21,20 @@ type Client interface {
 	GetAvailableMethods() []string
 
 	Auth(*proto.AuthRequest) (*string, error)
-	ReadLog(*proto.LogReadRequest, proto.AccessPoint_ReadLogServer) error
-	Post(request *proto.PostRequest) (*proto.PostResponse, error)
+	ReadLog(*proto.LogReadRequest, proto.Au10_ReadLogServer) error
+	ReadPosts(*proto.PostsReadRequest, proto.Au10_ReadPostsServer) error
+	ReadMessage(*proto.MessageReadRequest, proto.Au10_ReadMessageServer) error
+	AddPost(request *proto.PostAddRequest) (*proto.PostAddResponse, error)
+	MessageChunkWrite(*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error)
 }
 
 // CreateClient creates new Client instance.
-func CreateClient(requestID uint64, user au10.User, service *service) Client {
-	return &client{
-		service:   service,
-		requestID: requestID,
-		user:      user}
+func CreateClient(requestID uint64, user au10.User, service Service) Client {
+	return &client{service: service, requestID: requestID, user: user}
 }
 
 type client struct {
-	service   *service
+	service   Service
 	requestID uint64
 	user      au10.User
 }
@@ -43,16 +44,16 @@ func (client *client) getLogHeader(format string) string {
 		format
 }
 func (client *client) LogError(format string, args ...interface{}) {
-	client.service.au10.Log().Error(client.getLogHeader(format), args...)
+	client.service.GetAu10().Log().Error(client.getLogHeader(format), args...)
 }
 func (client *client) LogWarn(format string, args ...interface{}) {
-	client.service.au10.Log().Warn(client.getLogHeader(format), args...)
+	client.service.GetAu10().Log().Warn(client.getLogHeader(format), args...)
 }
 func (client *client) LogInfo(format string, args ...interface{}) {
-	client.service.au10.Log().Info(client.getLogHeader(format), args...)
+	client.service.GetAu10().Log().Info(client.getLogHeader(format), args...)
 }
 func (client *client) LogDebug(format string, args ...interface{}) {
-	client.service.au10.Log().Debug(client.getLogHeader(format), args...)
+	client.service.GetAu10().Log().Debug(client.getLogHeader(format), args...)
 }
 
 var starusByCode = map[codes.Code]string{
@@ -80,12 +81,12 @@ func (client *client) CreateError(
 
 	desc := fmt.Sprintf(descFormat, args...)
 	if len(desc) > 0 {
-		client.LogError("Error %d: "+desc+".", code)
+		client.LogError(strings.ToUpper(desc[:1])+desc[1:]+" (RPC error %d).", code)
+	} else {
+		client.LogError("RPC error %d.", code)
 	}
 	var externalDesc string
-	if client.service.au10.Log().GetMembership().IsAvailable(
-		client.user.GetRights()) {
-
+	if client.service.GetAu10().Log().GetMembership().IsAvailable(client.user.GetRights()) {
 		externalDesc = desc
 	} else {
 		var ok bool
@@ -99,14 +100,14 @@ func (client *client) CreateError(
 }
 
 func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
-	user, token, err := client.service.au10.GetUsers().Auth(request.Login)
+	user, token, err := client.service.GetAu10().GetUsers().Auth(request.Login)
 	if err != nil {
 		return nil, client.CreateError(codes.Internal, `failed to auth "%s": "%s"`,
 			request.Login, err)
 	}
 	if token == nil {
 		client.LogInfo(`Wrong creds for "%s"`, request.Login)
-		return token, nil
+		return nil, nil
 	}
 	client.user = user
 	client.LogInfo(`Authed "%s".`, request.Login)
@@ -114,38 +115,51 @@ func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
 }
 
 func (client *client) ReadLog(
-	request *proto.LogReadRequest, stream proto.AccessPoint_ReadLogServer) error {
+	request *proto.LogReadRequest, stream proto.Au10_ReadLogServer) error {
 
-	log := client.service.au10.Log()
+	log := client.service.GetAu10().Log()
 	if err := client.checkRights(log, "read log"); err != nil {
 		return err
 	}
 	return client.runLogSubscription(log, stream)
 }
 
-func (client *client) Post(
-	request *proto.PostRequest) (*proto.PostResponse, error) {
+func (client *client) ReadPosts(
+	*proto.PostsReadRequest, proto.Au10_ReadPostsServer) error {
 
-	if request.Post != nil {
-		return nil, client.CreateError(codes.InvalidArgument,
-			"failed to post as post not provided")
+	posts := client.service.GetAu10().GetPosts()
+	if err := client.checkRights(posts, "read posts"); err != nil {
+		return err
 	}
-	if len(request.Post.Text) == 0 {
-		return nil, client.CreateError(codes.InvalidArgument,
-			"failed to post as post is empty")
-	}
-	posts := client.service.au10.GetPosts()
+	return client.CreateError(codes.Unimplemented, `not implemented yet`)
+}
+
+func (client *client) ReadMessage(
+	*proto.MessageReadRequest, proto.Au10_ReadMessageServer) error {
+
+	return client.CreateError(codes.Unimplemented, `not implemented yet`)
+}
+
+func (client *client) AddPost(
+	request *proto.PostAddRequest) (*proto.PostAddResponse, error) {
+
+	posts := client.service.GetAu10().GetPosts()
 	err := client.checkRights(posts, "access posts")
 	if err != nil {
 		return nil, err
 	}
 	post := au10.CreatePostData()
-	post.SetText(request.Post.Text)
 	err = posts.Add(client.user, post)
 	if err != nil {
 		return nil, client.CreateError(codes.Internal, `failed to post: "%s"`, err)
 	}
-	return &proto.PostResponse{}, nil
+	return &proto.PostAddResponse{}, nil
+}
+
+func (client *client) MessageChunkWrite(
+	*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
+
+	return nil, client.CreateError(codes.Unimplemented, `not implemented yet`)
 }
 
 func (client *client) checkRights(entity au10.Member, action string) error {
@@ -159,10 +173,10 @@ func (client *client) checkRights(entity au10.Member, action string) error {
 func (client *client) GetAvailableMethods() []string {
 	result := []string{"auth"}
 	rights := client.user.GetRights()
-	if client.service.au10.Log().GetMembership().IsAvailable(rights) {
+	if client.service.GetAu10().Log().GetMembership().IsAvailable(rights) {
 		result = append(result, "readLog")
 	}
-	if client.service.au10.GetPosts().GetMembership().IsAvailable(rights) {
+	if client.service.GetAu10().GetPosts().GetMembership().IsAvailable(rights) {
 		result = append(result, "post")
 	}
 	return result

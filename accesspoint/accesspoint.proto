@@ -1,14 +1,38 @@
 syntax = "proto3";
 
-// AccessPoint describes access point service interface.
-service AccessPoint {
+// Au10 describes Authentic access point interface.
+service Au10 {
+  // GetProps returns service properties.
+  rpc GetProps(PropsRequest) returns (Props);
+
   // Auth accepts new user credentials, verifies it and sends token as metadata
-  // at success.
-  rpc Auth(AuthRequest) returns (AuthResponse) {}
+  // "auth" at success. Each future request has to control it - take this token
+  // from metadata "auth" after each response and provide it for the next
+  // request.
+  rpc Auth(AuthRequest) returns (AuthResponse);
+ 
   // ReadLog creates log records stream to read.
-  rpc ReadLog(LogReadRequest) returns (stream LogRecord) {}
-  // Post pushes new post into network.
-  rpc Post(PostRequest) returns (PostResponse) {}
+  rpc ReadLog(LogReadRequest) returns (stream LogRecord);
+ 
+  // ReadPosts creates posts stream to read posts.
+  rpc ReadPosts(PostsReadRequest) returns (stream Post);
+  // ReadMessage creates a stream to read requested message content.
+  rpc ReadMessage(MessageReadRequest) returns (stream MessageChunk);
+ 
+  // AddPost adds new posts into a network. The post will be unpublished until
+  // all defined messages will be uploaded.
+  rpc AddPost(PostAddRequest) returns (PostAddResponse);
+    // MessageChunkWrite writes a part of a message.
+  rpc MessageChunkWrite(MessageChunkWriteRequest)
+    returns (MessageChunkWriteResponse);
+}
+
+// PropsRequest describes properties request.
+message PropsRequest {}
+// Props describes service properties.
+message Props {
+  // The maximum number of bytes available for writing to the chunk.
+  uint64 maxChunkSize = 1;
 }
 
 // AuthRequest describes auth request.
@@ -24,8 +48,6 @@ message AuthResponse {
    repeated string methods = 2;
 }
 
-// LogReadRequest describes log records stream reading request.
-message LogReadRequest {}
 // LogRecord describes log record.
 message LogRecord {
   // Global sequence number.
@@ -41,18 +63,85 @@ message LogRecord {
   // Node instance name.
   string nodeName = 6;
 }
+// LogReadRequest describes log records stream reading request.
+message LogReadRequest {}
 
 // Post describes post entity.
 message Post {
-  // Text.
-  string text = 1;
+  // Type is a post type description.
+  enum Type {
+    POST = 0;
+    VOCAL = 1;
+    MOMENT = 2;
+  }
+  // ID.
+  uint64 id = 1;
+  // Type.
+  Type type = 2;
+  // Attached message list.
+  repeated Message messages = 3;
+}
+message Message {
+  // Type is a message type description.
+  enum Type {
+    // Plain text.
+    TEXT = 0;
+  }
+  // ID.
+  uint64 id = 1;
+  // Type.
+  Type type = 2;
+  // Size in bytes.
+  uint64 size = 3;
 }
 
-// Post describes post request.
-message PostRequest {
-  // Post.
-  Post post = 1; 
+// PostsReadRequest describes post reading request.
+message PostsReadRequest {}
+
+// MessageReadRequest describes message reading request.
+message MessageReadRequest {
+  // Post ID.
+  string postId = 1;
+  // Message ID.
+  string messageId = 2;
+}
+// MessageChunk describes message chunk in reading request response.
+message MessageChunk {
+  // Chunk data.
+  bytes chunk = 1;
 }
 
-// Post describes post request resppnse.
-message PostResponse {}
+// PostAddRequest describes post adding request.
+message PostAddRequest {
+  // MessageDeclaration describes a message which will be attached to a post.
+  message MessageDeclaration {
+    // Message type.
+    Message.Type type = 1;
+    // Message size in bytes.
+    uint64 size = 2;
+  }
+  // Type.
+  Post.Type type = 2;
+  // The messages general info in the post.
+  repeated MessageDeclaration messages = 1;
+}
+// PostAddResponse describes post adding request response.
+message PostAddResponse {
+  // ID of new post.
+  string postId = 1;
+  // The message ID list, in the same order as was posted.
+  repeated string messageIds = 2;
+}
+
+// MessageChunkWriteRequest describes request to write part of message content.
+message MessageChunkWriteRequest {
+  // Post ID.
+  string postId = 1;
+  // Message ID.
+  string messageId = 2;
+  // Chunk data. It has to have a size between one byte and
+  // PropsResponse.maxChunkSize inclusive.
+  bytes chunk = 4;
+}
+// MessageChunkWriteResponse describes message content writing request response.
+message MessageChunkWriteResponse {}

@@ -133,7 +133,13 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,au10/users,Users)
 	$(call gen_mock_aux,au10/post,Post,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/posts,Posts,$(CODE_REPO)/au10=au10/member.go)
+
+	$(call gen_mock,accesspoint/lib/service,Service)
+	$(call gen_mock,accesspoint/lib/client,Client)
+	$(call gen_mock,accesspoint/lib/grpc,Grpc)
+	$(call gen_mock_ext,$(CODE_REPO)/accesspoint/proto,Au10_ReadLogServer$(COMMA)Au10_ReadPostsServer$(COMMA)Au10_ReadMessageServer,proto)
 	
+	$(call gen_mock_ext,context,Context,context)
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
 
 	@$(call echo_success)

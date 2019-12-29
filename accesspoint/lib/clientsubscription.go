@@ -10,32 +10,33 @@ import (
 	codes "google.golang.org/grpc/codes"
 )
 
-type subscriptionInfo struct {
-	name                string
-	numberOfSubscribers uint32
+// SubscriptionInfo stores abstract subscription information.
+type SubscriptionInfo struct {
+	Name                string
+	NumberOfSubscribers uint32
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 func (client *client) runLogSubscription(
-	log au10.Log,
-	stream proto.AccessPoint_ReadLogServer) error {
+	log au10.Log, stream proto.Au10_ReadLogServer) error {
 
 	subscription, err := log.Subscribe()
 	if err != nil {
-		return err
+		return client.CreateError(codes.Internal,
+			`failed to subscribe to log: "%s"`, err)
 	}
 	return client.runSubscription(
 		stream.Context(),
 		&logSubscription{
 			abstractSubscription: abstractSubscription{subscription: subscription},
 			stream:               stream},
-		&client.service.logSubscriptionInfo)
+		client.service.GetLogSubscriptionInfo())
 }
 
 type logSubscription struct {
 	abstractSubscription
-	stream proto.AccessPoint_ReadLogServer
+	stream proto.Au10_ReadLogServer
 }
 
 func (subscription *logSubscription) sendNext() (bool, error) {
@@ -74,7 +75,7 @@ type subscription interface {
 func (client *client) runSubscription(
 	ctx context.Context,
 	subscription subscription,
-	info *subscriptionInfo) error {
+	info *SubscriptionInfo) error {
 
 	errChan := make(chan error, 1)
 	var stopBarrier sync.WaitGroup
@@ -91,10 +92,10 @@ func (client *client) runSubscription(
 	}()
 
 	numberOfSubscribers := client.service.RegisterSubscriber()
-	atomic.AddUint32(&info.numberOfSubscribers, 1)
+	atomic.AddUint32(&info.NumberOfSubscribers, 1)
 
-	client.LogInfo("Subscribed to %s (%d/%d subscriptions).",
-		info.name, info.numberOfSubscribers, numberOfSubscribers)
+	client.LogDebug("Subscribed to %s (%d/%d).",
+		info.Name, info.NumberOfSubscribers, numberOfSubscribers)
 
 	var err error
 	select {
@@ -107,16 +108,16 @@ func (client *client) runSubscription(
 	subscription.close()
 	stopBarrier.Wait()
 	close(errChan)
-	atomic.AddUint32(&info.numberOfSubscribers, ^uint32(0))
+	atomic.AddUint32(&info.NumberOfSubscribers, ^uint32(0))
 	numberOfSubscribers = client.service.UnregisterSubscriber()
 
 	if err != nil {
 		return client.CreateError(codes.Internal,
-			`subscription to %s error: %s" (%d/%d subscribers)`,
-			info.name, err, info.numberOfSubscribers, numberOfSubscribers)
+			`subscription to %s error: "%s" (%d/%d)`,
+			info.Name, err, info.NumberOfSubscribers, numberOfSubscribers)
 	}
-	client.LogInfo("Subscription to %s canceled (%d/%d subscribers).",
-		info.name, info.numberOfSubscribers, numberOfSubscribers)
+	client.LogDebug("Subscription to %s canceled (%d/%d).",
+		info.Name, info.NumberOfSubscribers, numberOfSubscribers)
 	return nil
 }
 
