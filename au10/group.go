@@ -27,8 +27,8 @@ func CreateRights(domain, name string) Rights {
 type Membership interface {
 	// Get returns group info.
 	Get() Group
-	// IsAvailable returns true if one or more given groups are accessible for the membership.
-	IsAvailable([]Rights) bool
+	// IsAllowed returns true if one or more given groups are accessible for the membership.
+	IsAllowed([]Rights) bool
 }
 
 // CreateMembership creates a new instance of Membership.
@@ -44,7 +44,7 @@ type group struct {
 
 func (group *group) Get() Group { return group.group }
 
-func (group *group) IsAvailable(rights []Rights) bool {
+func (group *group) IsAllowed(rights []Rights) bool {
 	if group.group.Name == "*" && group.group.Domain == "*" {
 		return true
 	}

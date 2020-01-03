@@ -17,6 +17,7 @@ type Service interface {
 	GetGlobalProps() *proto.Props
 
 	GetLogSubscriptionInfo() *SubscriptionInfo
+	GetPostsSubscriptionInfo() *SubscriptionInfo
 	RegisterSubscriber() uint32
 	UnregisterSubscriber() uint32
 }
@@ -26,35 +27,48 @@ type service struct {
 	au10  au10.Service
 
 	defaultUser  au10.User
-	createClient func(requestID uint64, user au10.User, service Service) Client
-	grpc         Grpc
+	createClient func(
+		requestID uint64,
+		request string,
+		user au10.User,
+		service Service) Client
+	grpc Grpc
 
-	lastRequestID       uint64
-	numberOfSubscribers uint32
-	logSubscriptionInfo *SubscriptionInfo
+	lastRequestID         uint64
+	numberOfSubscribers   uint32
+	logSubscriptionInfo   *SubscriptionInfo
+	postsSubscriptionInfo *SubscriptionInfo
 }
 
 // CreateAu10Server creates Au10Server server implementation instance.
 func CreateAu10Server(
 	props *proto.Props,
 	defaultUser au10.User,
-	createClient func(requestID uint64, user au10.User, service Service) Client,
+	createClient func(
+		requestID uint64,
+		request string,
+		user au10.User,
+		service Service) Client,
 	grpc Grpc,
 	au10Service au10.Service) proto.Au10Server {
 
 	return &service{
-		props:               props,
-		au10:                au10Service,
-		defaultUser:         defaultUser,
-		createClient:        createClient,
-		grpc:                grpc,
-		logSubscriptionInfo: &SubscriptionInfo{Name: "log"}}
+		props:                 props,
+		au10:                  au10Service,
+		defaultUser:           defaultUser,
+		createClient:          createClient,
+		grpc:                  grpc,
+		logSubscriptionInfo:   &SubscriptionInfo{},
+		postsSubscriptionInfo: &SubscriptionInfo{}}
 }
 
 func (service *service) GetAu10() au10.Service { return service.au10 }
 
 func (service *service) GetLogSubscriptionInfo() *SubscriptionInfo {
 	return service.logSubscriptionInfo
+}
+func (service *service) GetPostsSubscriptionInfo() *SubscriptionInfo {
+	return service.postsSubscriptionInfo
 }
 
 func (service *service) RegisterSubscriber() uint32 {
@@ -77,7 +91,7 @@ func (service *service) Auth(
 	ctx context.Context,
 	request *proto.AuthRequest) (*proto.AuthResponse, error) {
 
-	client, err := service.createRequestClient(ctx)
+	client, err := service.createRequestClient(ctx, "Auth")
 	if err != nil {
 		return nil, err
 	}
@@ -96,15 +110,15 @@ func (service *service) Auth(
 	}
 
 	return &proto.AuthResponse{
-			IsSuccess: token != nil,
-			Methods:   client.GetAvailableMethods()},
+			IsSuccess:      token != nil,
+			AllowedMethods: client.GetAllowedMethods()},
 		nil
 }
 
 func (service *service) ReadLog(
 	request *proto.LogReadRequest, subscription proto.Au10_ReadLogServer) error {
 
-	client, err := service.createRequestClient(subscription.Context())
+	client, err := service.createRequestClient(subscription.Context(), "ReadLog")
 	if err != nil {
 		return err
 	}
@@ -115,7 +129,8 @@ func (service *service) ReadPosts(
 	request *proto.PostsReadRequest,
 	subscription proto.Au10_ReadPostsServer) error {
 
-	client, err := service.createRequestClient(subscription.Context())
+	client, err := service.createRequestClient(
+		subscription.Context(), "ReadPosts")
 	if err != nil {
 		return err
 	}
@@ -126,7 +141,8 @@ func (service *service) ReadMessage(
 	request *proto.MessageReadRequest,
 	subscription proto.Au10_ReadMessageServer) error {
 
-	client, err := service.createRequestClient(subscription.Context())
+	client, err := service.createRequestClient(
+		subscription.Context(), "ReadMessage")
 	if err != nil {
 		return err
 	}
@@ -137,26 +153,26 @@ func (service *service) AddPost(
 	ctx context.Context,
 	request *proto.PostAddRequest) (*proto.PostAddResponse, error) {
 
-	client, err := service.createRequestClient(ctx)
+	client, err := service.createRequestClient(ctx, "AddPost")
 	if err != nil {
 		return nil, err
 	}
 	return client.AddPost(request)
 }
 
-func (service *service) MessageChunkWrite(
+func (service *service) WriteMessageChunk(
 	ctx context.Context,
 	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
 
-	client, err := service.createRequestClient(ctx)
+	client, err := service.createRequestClient(ctx, "WriteMessageChunk")
 	if err != nil {
 		return nil, err
 	}
-	return client.MessageChunkWrite(request)
+	return client.WriteMessageChunk(request)
 }
 
 func (service *service) createRequestClient(
-	ctx context.Context) (Client, error) {
+	ctx context.Context, request string) (Client, error) {
 
 	user := service.defaultUser
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
@@ -174,6 +190,6 @@ func (service *service) createRequestClient(
 		}
 	}
 	return service.createClient(
-			atomic.AddUint64(&service.lastRequestID, 1), user, service),
+			atomic.AddUint64(&service.lastRequestID, 1), request, user, service),
 		nil
 }

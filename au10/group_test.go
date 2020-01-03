@@ -27,14 +27,14 @@ func Test_Au10_CheckRights_Root(test *testing.T) {
 	rights := []au10.Rights{
 		au10.CreateRights("test domain", "test group"),
 		au10.CreateRights("*", "*")}
-	assert.True(au10.CreateMembership("some domain", "some group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain", "test group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("", "some group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("some domain", "").IsAvailable(rights))
-	assert.True(au10.CreateMembership("", "").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "some group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("some domain", "*").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "*").IsAvailable(rights))
+	assert.True(au10.CreateMembership("some domain", "some group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain", "test group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("", "some group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("some domain", "").IsAllowed(rights))
+	assert.True(au10.CreateMembership("", "").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "some group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("some domain", "*").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "*").IsAllowed(rights))
 }
 
 func Test_Au10_CheckRights_DomainAdmin(test *testing.T) {
@@ -43,19 +43,19 @@ func Test_Au10_CheckRights_DomainAdmin(test *testing.T) {
 		au10.CreateRights("test domain 1", "test group"),
 		au10.CreateRights("test domain 2", "test group"),
 		au10.CreateRights("test domain 2", "*")}
-	assert.True(!au10.CreateMembership("some domain", "test group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "test group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "test group X").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("", "").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain 1", "").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "test group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "test group X").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "*").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 1", "*").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "*").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain 3", "*").IsAvailable(rights))
+	assert.True(!au10.CreateMembership("some domain", "test group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "test group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "test group X").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("", "").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain 1", "").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "test group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "test group X").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "*").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 1", "*").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "*").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain 3", "*").IsAllowed(rights))
 }
 
 func Test_Au10_CheckRights_User(test *testing.T) {
@@ -64,31 +64,31 @@ func Test_Au10_CheckRights_User(test *testing.T) {
 		au10.CreateRights("test domain 1", "test group"),
 		au10.CreateRights("test domain 2", "test group 1"),
 		au10.CreateRights("test domain 2", "test group 2")}
-	assert.True(!au10.CreateMembership("some domain", "test group").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 1", "test group").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain 1", "test group X").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "test group 1").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 2", "test group 2").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain 2", "test group X").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "test group 1").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("*", "test group X").IsAvailable(rights))
-	assert.True(au10.CreateMembership("test domain 1", "*").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "*").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("", "test group 1").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("", "").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain 1", "").IsAvailable(rights))
+	assert.True(!au10.CreateMembership("some domain", "test group").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 1", "test group").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain 1", "test group X").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "test group 1").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 2", "test group 2").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain 2", "test group X").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "test group 1").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("*", "test group X").IsAllowed(rights))
+	assert.True(au10.CreateMembership("test domain 1", "*").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "*").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("", "test group 1").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("", "").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain 1", "").IsAllowed(rights))
 }
 
 func Test_Au10_CheckRights_NoRights(test *testing.T) {
 	assert := assert.New(test)
 	rights := []au10.Rights{}
-	assert.True(!au10.CreateMembership("some domain", "some group").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("*", "test group 1").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("*", "test group 2").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("*", "test group X").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain", "*").IsAvailable(rights))
-	assert.True(!au10.CreateMembership("test domain X", "*").IsAvailable(rights))
-	assert.True(au10.CreateMembership("*", "*").IsAvailable(rights))
+	assert.True(!au10.CreateMembership("some domain", "some group").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("*", "test group 1").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("*", "test group 2").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("*", "test group X").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain", "*").IsAllowed(rights))
+	assert.True(!au10.CreateMembership("test domain X", "*").IsAllowed(rights))
+	assert.True(au10.CreateMembership("*", "*").IsAllowed(rights))
 }
 
 func Test_Au10_Membership_Creation(test *testing.T) {

@@ -27,7 +27,7 @@ func Test_Accesspoint_Client_Log(test *testing.T) {
 	accesspoint := mock_ap.NewMockService(mock)
 	user := mock_au10.NewMockUser(mock)
 
-	client := ap.CreateClient(123, user, accesspoint)
+	client := ap.CreateClient(123, "Test", user, accesspoint)
 
 	log := mock_au10.NewMockLog(mock)
 	service := mock_au10.NewMockService(mock)
@@ -35,19 +35,19 @@ func Test_Accesspoint_Client_Log(test *testing.T) {
 	accesspoint.EXPECT().GetAu10().Times(4).Return(service)
 
 	user.EXPECT().GetLogin().Return("error login")
-	log.EXPECT().Error("123.error login: test error record %s", "argument")
+	log.EXPECT().Error("[Test.123.error login] test error record %s", "argument")
 	client.LogError("test error record %s", "argument")
 
 	user.EXPECT().GetLogin().Return("warn login")
-	log.EXPECT().Warn("123.warn login: test warn record %s", "argument")
+	log.EXPECT().Warn("[Test.123.warn login] test warn record %s", "argument")
 	client.LogWarn("test warn record %s", "argument")
 
 	user.EXPECT().GetLogin().Return("info login")
-	log.EXPECT().Info("123.info login: test info record %s", "argument")
+	log.EXPECT().Info("[Test.123.info login] test info record %s", "argument")
 	client.LogInfo("test info record %s", "argument")
 
 	user.EXPECT().GetLogin().Return("debug login")
-	log.EXPECT().Debug("123.debug login: test debug record %s", "argument")
+	log.EXPECT().Debug("[Test.123.debug login] test debug record %s", "argument")
 	client.LogDebug("test debug record %s", "argument")
 }
 
@@ -75,7 +75,7 @@ func createClientTest(test *testing.T) *clientTest {
 	result.log = mock_au10.NewMockLog(result.mock)
 	result.user = mock_au10.NewMockUser(result.mock)
 	result.logMembership = mock_au10.NewMockMembership(result.mock)
-	result.client = ap.CreateClient(345, result.user, result.accesspoint)
+	result.client = ap.CreateClient(345, "Test", result.user, result.accesspoint)
 
 	result.accesspoint.EXPECT().GetAu10().AnyTimes().Return(result.service)
 	result.service.EXPECT().Log().AnyTimes().Return(result.log)
@@ -95,10 +95,11 @@ func (test *clientTest) testPermissionDenied(
 	run func() (interface{}, error),
 	action string) {
 
-	membership.EXPECT().IsAvailable(test.rights).Return(false)
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
+	membership.EXPECT().IsAllowed(test.rights).Return(false)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	test.log.EXPECT().Error(
-		fmt.Sprintf("345.test login: Permission denied to %s (RPC error %%d).",
+		fmt.Sprintf(
+			"[Test.345.test login] Permission denied for %s (RPC error %%d).",
 			action),
 		codes.PermissionDenied)
 	response, err := run()
@@ -107,9 +108,47 @@ func (test *clientTest) testPermissionDenied(
 		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
 }
 
+func (test *clientTest) testSubscribeError(
+	membership *mock_au10.MockMembership,
+	prepareErr func(error),
+	run func() (interface{}, error),
+	action string) {
+
+	test.testPermissionDenied(membership, run, action)
+
+	membership.EXPECT().IsAllowed(test.rights).Return(true)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	prepareErr(errors.New("test subscribe error"))
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to subscribe: "test subscribe error" (RPC error %d).`,
+		codes.Internal)
+	response, err := run()
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+
+}
+
+func (test *clientTest) testNumberOfStructFields(
+	s interface{}, numberOfFields int) {
+
+	test.assert.Equal(numberOfFields,
+		reflect.Indirect(reflect.ValueOf(s)).NumField())
+}
+
+func (test *clientTest) testNumberOfProtoStructFields(
+	s interface{}, numberOfFields int) {
+
+	test.testNumberOfStructFields(s, numberOfFields+3)
+}
+
 func (test *clientTest) testSubscription(
-	run func(ctx context.Context) error,
+	prepare func(*ap.SubscriptionInfo),
+	run func(ctx context.Context, isErrData bool) error,
 	createData func(),
+	createErrorData []struct {
+		errText string
+		run     func()
+	},
 	createErr func(error),
 	closeSubscription func()) {
 
@@ -120,19 +159,16 @@ func (test *clientTest) testSubscription(
 	defer close(ctxDoneChan)
 	ctx.EXPECT().Done().MinTimes(1).Return(ctxDoneChan)
 
-	subscriptionInfo := &ap.SubscriptionInfo{
-		Name:                "test subscription",
-		NumberOfSubscribers: 101}
-	test.assert.Equal(2,
-		reflect.Indirect(reflect.ValueOf(subscriptionInfo)).NumField())
+	subscriptionInfo := &ap.SubscriptionInfo{NumberOfSubscribers: 101}
+	test.testNumberOfStructFields(subscriptionInfo, 1)
 
-	test.log.EXPECT().Debug(
-		"345.test login: Subscription to %s canceled (%d/%d).",
-		subscriptionInfo.Name, uint32(101), uint32(909)).
-		After(test.log.EXPECT().Debug("345.test login: Subscribed to %s (%d/%d).",
-			subscriptionInfo.Name, uint32(102), uint32(808)))
+	test.log.EXPECT().Debug("[Test.345.test login] Canceled (%d/%d).",
+		uint32(101), uint32(909)).
+		After(test.log.EXPECT().Debug("[Test.345.test login] Subscribed (%d/%d).",
+			uint32(102), uint32(808)))
 
-	test.accesspoint.EXPECT().GetLogSubscriptionInfo().Return(subscriptionInfo)
+	prepare(subscriptionInfo)
+
 	test.accesspoint.EXPECT().UnregisterSubscriber().Return(uint32(909)).After(
 		test.accesspoint.EXPECT().RegisterSubscriber().Return(uint32(808)))
 
@@ -140,41 +176,42 @@ func (test *clientTest) testSubscription(
 		createData()
 		ctxDoneChan <- struct{}{}
 	}()
-	test.assert.NoError(run(ctx))
+	test.assert.NoError(run(ctx, false))
 
 	// Failed execution
 
 	subscriptionInfo.NumberOfSubscribers = 201
 
-	test.log.EXPECT().Error(fmt.Sprintf(
-		`345.test login: Subscription to %s error: "test subscription error" (%d/%d) (RPC error %%d).`,
-		subscriptionInfo.Name, 201, 2909),
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed: "test subscription error" (201/2909) (RPC error %d).`,
 		codes.Internal).
-		After(test.log.EXPECT().Debug("345.test login: Subscribed to %s (%d/%d).",
-			subscriptionInfo.Name, uint32(202), uint32(2808)))
+		After(test.log.EXPECT().Debug("[Test.345.test login] Subscribed (%d/%d).",
+			uint32(202), uint32(2808)))
 
-	test.accesspoint.EXPECT().GetLogSubscriptionInfo().Return(subscriptionInfo)
+	prepare(subscriptionInfo)
+
 	test.accesspoint.EXPECT().UnregisterSubscriber().Return(uint32(2909)).After(
 		test.accesspoint.EXPECT().RegisterSubscriber().Return(uint32(2808)))
 
 	go func() {
 		createData()
-		test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
+		test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 		createErr(errors.New("test subscription error"))
 	}()
-	test.assert.EqualError(run(ctx), "rpc error: code = Internal desc = INTERNAL")
+	test.assert.EqualError(run(ctx, false),
+		"rpc error: code = Internal desc = INTERNAL")
 
 	// Closed
 
 	subscriptionInfo.NumberOfSubscribers = 301
 
-	test.log.EXPECT().Debug(
-		"345.test login: Subscription to %s canceled (%d/%d).",
-		subscriptionInfo.Name, uint32(301), uint32(3909)).
-		After(test.log.EXPECT().Debug("345.test login: Subscribed to %s (%d/%d).",
-			subscriptionInfo.Name, uint32(302), uint32(3808)))
+	test.log.EXPECT().Debug("[Test.345.test login] Canceled (%d/%d).",
+		uint32(301), uint32(3909)).
+		After(test.log.EXPECT().Debug("[Test.345.test login] Subscribed (%d/%d).",
+			uint32(302), uint32(3808)))
 
-	test.accesspoint.EXPECT().GetLogSubscriptionInfo().Return(subscriptionInfo)
+	prepare(subscriptionInfo)
+
 	test.accesspoint.EXPECT().UnregisterSubscriber().Return(uint32(3909)).After(
 		test.accesspoint.EXPECT().RegisterSubscriber().Return(uint32(3808)))
 
@@ -182,32 +219,203 @@ func (test *clientTest) testSubscription(
 		createData()
 		closeSubscription()
 	}()
-	test.assert.NoError(run(ctx))
+	test.assert.NoError(run(ctx, false))
+
+	// Data with error
+
+	subscriptionInfo.NumberOfSubscribers = 401
+
+	for _, dataMock := range createErrorData {
+
+		test.log.EXPECT().Error(
+			`[Test.345.test login] Failed: "`+dataMock.errText+`" (401/4909) (RPC error %d).`,
+			codes.Internal).
+			After(test.log.EXPECT().Debug("[Test.345.test login] Subscribed (%d/%d).",
+				uint32(402), uint32(4808)))
+
+		prepare(subscriptionInfo)
+
+		test.accesspoint.EXPECT().UnregisterSubscriber().Return(uint32(4909)).After(
+			test.accesspoint.EXPECT().RegisterSubscriber().Return(uint32(4808)))
+
+		go func() {
+			test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+			dataMock.run()
+		}()
+		test.assert.EqualError(run(ctx, true),
+			"rpc error: code = Internal desc = INTERNAL")
+
+	}
+}
+
+func (test *clientTest) prepareMessageExecution() *mock_au10.MockMessage {
+	messageMembership := mock_au10.NewMockMembership(test.mock)
+	messageMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+
+	message := mock_au10.NewMockMessage(test.mock)
+	message.EXPECT().GetID().MinTimes(1).Return(au10.MessageID(456))
+	message.EXPECT().GetMembership().MinTimes(1).Return(messageMembership)
+
+	postMembership := mock_au10.NewMockMembership(test.mock)
+	postMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+
+	post := mock_au10.NewMockPost(test.mock)
+	post.EXPECT().GetMembership().MinTimes(1).Return(postMembership)
+	post.EXPECT().GetMessages().MinTimes(1).Return([]au10.Message{message})
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().MinTimes(1).Return(postsMembership)
+	posts.EXPECT().GetPost(au10.PostID(123)).MinTimes(1).Return(post, nil)
+
+	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
+
+	return message
+}
+
+func testClientMessagePermissionDenied(
+	t *testing.T,
+	action string,
+	run func(client ap.Client, postID, messageID string) (interface{}, error)) {
+
+	test := createClientTest(t)
+	defer test.close()
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Permission denied for message "123"/"456" (RPC error %d).`,
+		codes.PermissionDenied)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	messageMembership := mock_au10.NewMockMembership(test.mock)
+	messageMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	message := mock_au10.NewMockMessage(test.mock)
+	message.EXPECT().GetID().Return(au10.MessageID(456))
+	message.EXPECT().GetMembership().Return(messageMembership)
+	postMembership := mock_au10.NewMockMembership(test.mock)
+	postMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	post := mock_au10.NewMockPost(test.mock)
+	post.EXPECT().GetMembership().Return(postMembership)
+	post.EXPECT().GetMessages().Return([]au10.Message{message})
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
+	test.service.EXPECT().GetPosts().Return(posts)
+	response, err := run(test.client, "123", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Permission denied for post "123"/"456" (RPC error %d).`,
+		codes.PermissionDenied)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	postMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	post.EXPECT().GetMembership().Return(postMembership)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
+	test.service.EXPECT().GetPosts().Return(posts)
+	response, err = run(test.client, "123", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
+
+	test.log.EXPECT().Error(
+		"[Test.345.test login] Permission denied for posts (RPC error %d).",
+		codes.PermissionDenied)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	test.service.EXPECT().GetPosts().Return(posts)
+	response, err = run(test.client, "123", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
+}
+
+func testClientMessageInvalidArgument(
+	t *testing.T,
+	action string,
+	run func(client ap.Client, postID, messageID string) (interface{}, error)) {
+
+	test := createClientTest(t)
+	defer test.close()
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().MinTimes(1).Return(postsMembership)
+	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
+	test.logMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(false)
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to parse post ID "---"/"456": "strconv.ParseUint: parsing "---": invalid syntax" (RPC error %d).`,
+		codes.InvalidArgument)
+	response, err := run(test.client, "---", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to get post "123"/"456": "test error" (RPC error %d).`,
+		codes.InvalidArgument)
+	posts.EXPECT().GetPost(au10.PostID(123)).Return(nil, errors.New("test error"))
+	response, err = run(test.client, "123", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to parse message ID "123"/"abc": "strconv.ParseUint: parsing "abc": invalid syntax" (RPC error %d).`,
+		codes.InvalidArgument)
+	response, err = run(test.client, "123", "abc")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to find message "123"/"456" (RPC error %d).`,
+		codes.InvalidArgument)
+	message := mock_au10.NewMockMessage(test.mock)
+	message.EXPECT().GetID().Return(au10.MessageID(987))
+	postMembership := mock_au10.NewMockMembership(test.mock)
+	postMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	post := mock_au10.NewMockPost(test.mock)
+	post.EXPECT().GetMembership().Return(postMembership)
+	post.EXPECT().GetMessages().Return([]au10.Message{message})
+	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
+	response, err = run(test.client, "123", "456")
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
 }
 
 func Test_Accesspoint_Client_CreateError(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
 
-	test.log.EXPECT().Error("345.test login: Test error full text (RPC error %d).",
+	test.log.EXPECT().Error("[Test.345.test login] Test error full text (RPC error %d).",
 		codes.Internal)
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	err := test.client.CreateError(codes.Internal, "test error full text")
 	test.assert.EqualError(err,
 		"rpc error: code = Internal desc = INTERNAL")
 
-	test.log.EXPECT().Error("345.test login: Test error full text 2 (RPC error %d).",
+	test.log.EXPECT().Error("[Test.345.test login] Test error full text 2 (RPC error %d).",
 		codes.InvalidArgument)
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(true)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
 	err = test.client.CreateError(codes.InvalidArgument, "test error full text 2")
 	test.assert.EqualError(err,
 		"rpc error: code = InvalidArgument desc = test error full text 2")
 
-	test.log.EXPECT().Error("345.test login: RPC error %d.", codes.Code(18))
+	test.log.EXPECT().Error("[Test.345.test login] RPC error %d.", codes.Code(18))
 	test.log.EXPECT().Error(
-		"345.test login: Failed to find external description for status code %d.",
+		"[Test.345.test login] Failed to find external description for status code %d.",
 		codes.Code(18))
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	err = test.client.CreateError(codes.Code(18), "")
 	test.assert.EqualError(err, "rpc error: code = Code(18) desc = unknown error")
 }
@@ -216,8 +424,7 @@ func Test_Accesspoint_Client_Auth(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
 
-	test.assert.Equal(1+3,
-		reflect.Indirect(reflect.ValueOf(&proto.AuthRequest{})).NumField())
+	test.testNumberOfProtoStructFields(&proto.AuthRequest{}, 1)
 
 	users := mock_au10.NewMockUsers(test.mock)
 	test.service.EXPECT().GetUsers().Times(3).Return(users)
@@ -227,9 +434,9 @@ func Test_Accesspoint_Client_Auth(t *testing.T) {
 	testToken := "test token"
 	users.EXPECT().Auth("test login x").
 		Return(user, &testToken, errors.New("test error"))
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	test.log.EXPECT().Error(
-		`345.test login: Failed to auth "test login x": "test error" (RPC error %d).`,
+		`[Test.345.test login] Failed to auth "test login x": "test error" (RPC error %d).`,
 		codes.Internal)
 	token, err := test.client.Auth(&proto.AuthRequest{Login: "test login x"})
 	test.assert.Nil(token)
@@ -237,14 +444,14 @@ func Test_Accesspoint_Client_Auth(t *testing.T) {
 
 	users.EXPECT().Auth("test login x2").Return(user, nil, nil)
 	test.log.EXPECT().Info(
-		`345.test login: Wrong creds for "%s"`, "test login x2")
+		`[Test.345.test login] Wrong creds for "%s"`, "test login x2")
 	token, err = test.client.Auth(&proto.AuthRequest{Login: "test login x2"})
 	test.assert.Nil(token)
 	test.assert.NoError(err)
 
 	users.EXPECT().Auth("test login x3").Return(user, &testToken, nil)
 	user.EXPECT().GetLogin().Return("test login x4")
-	test.log.EXPECT().Info(`345.test login x4: Authed "%s".`, "test login x3")
+	test.log.EXPECT().Info(`[Test.345.test login x4] Authed "%s".`, "test login x3")
 	token, err = test.client.Auth(&proto.AuthRequest{Login: "test login x3"})
 	test.assert.NotNil(token)
 	test.assert.Equal("test token", *token)
@@ -257,27 +464,23 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 
 	response := mock_proto.NewMockAu10_ReadLogServer(test.mock)
 
-	test.testPermissionDenied(
+	test.testSubscribeError(
 		test.logMembership,
+		func(err error) { test.log.EXPECT().Subscribe().Return(nil, err) },
 		func() (interface{}, error) {
 			return nil, test.client.ReadLog(nil, response)
 		},
-		"read log")
-
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(true)
-	test.logMembership.EXPECT().IsAvailable(test.rights).Return(false)
-	test.log.EXPECT().Subscribe().Return(nil, errors.New("test subscribe error"))
-	test.log.EXPECT().Error(
-		`345.test login: Failed to subscribe to log: "test subscribe error" (RPC error %d).`,
-		codes.Internal)
-	err := test.client.ReadLog(nil, response)
-	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+		"log")
 
 	var recordsChan chan au10.LogRecord
 	var errChan chan error
-
 	test.testSubscription(
-		func(ctx context.Context) error {
+		func(subscriptionInfo *ap.SubscriptionInfo) {
+			test.accesspoint.EXPECT().GetLogSubscriptionInfo().
+				Return(subscriptionInfo)
+		},
+		func(ctx context.Context, isErrData bool) error {
+			test.assert.False(isErrData)
 			subscription := mock_au10.NewMockLogSubscription(test.mock)
 			errChan = make(chan error)
 			subscription.EXPECT().GetErrChan().MinTimes(1).Return(errChan)
@@ -290,7 +493,7 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 				close(errChan)
 			})
 			test.log.EXPECT().Subscribe().Return(subscription, nil)
-			test.logMembership.EXPECT().IsAvailable(test.rights).Return(true)
+			test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
 			response.EXPECT().Send(gomock.Any()).Do(func(record *proto.LogRecord) {
 				test.assert.Equal(int64(987), record.SeqNum)
 				test.assert.Equal(int64(567), record.Time)
@@ -298,8 +501,7 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 				test.assert.Equal("debug", record.Severity)
 				test.assert.Equal("test node type", record.NodeType)
 				test.assert.Equal("test node name", record.NodeName)
-				test.assert.Equal(6+3,
-					reflect.Indirect(reflect.ValueOf(record)).NumField())
+				test.testNumberOfProtoStructFields(record, 6)
 			}).Return(nil)
 			response.EXPECT().Context().Return(ctx)
 			return test.client.ReadLog(nil, response)
@@ -314,6 +516,7 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 			record.EXPECT().GetNodeName().Return("test node name")
 			recordsChan <- record
 		},
+		nil,
 		func(err error) { errChan <- err },
 		func() {
 			close(recordsChan)
@@ -333,10 +536,460 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 
 	response := mock_proto.NewMockAu10_ReadPostsServer(test.mock)
 
-	test.testPermissionDenied(
+	test.testSubscribeError(
 		postsMembership,
+		func(err error) { posts.EXPECT().Subscribe().Return(nil, err) },
 		func() (interface{}, error) {
 			return nil, test.client.ReadPosts(nil, response)
 		},
-		"read posts")
+		"posts")
+
+	var postsChan chan au10.Post
+	var errChan chan error
+	test.testSubscription(
+		func(subscriptionInfo *ap.SubscriptionInfo) {
+			test.accesspoint.EXPECT().GetPostsSubscriptionInfo().
+				Return(subscriptionInfo)
+		},
+		func(ctx context.Context, isErrData bool) error {
+			subscription := mock_au10.NewMockPostsSubscription(test.mock)
+			errChan = make(chan error)
+			subscription.EXPECT().GetErrChan().MinTimes(1).Return(errChan)
+			postsChan = make(chan au10.Post)
+			subscription.EXPECT().GetRecordsChan().MinTimes(1).Return(postsChan)
+			subscription.EXPECT().Close().Do(func() {
+				if postsChan != nil {
+					close(postsChan)
+				}
+				close(errChan)
+			})
+			posts.EXPECT().Subscribe().Return(subscription, nil)
+			postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+			if !isErrData {
+				response.EXPECT().Send(gomock.Any()).Do(func(post *proto.Post) {
+					test.assert.Equal(uint64(987), post.Id)
+					test.assert.Equal(proto.Post_VOCAL, post.Kind)
+					test.assert.Equal(int64(567), post.Time)
+					test.assert.Equal([]*proto.Message{
+						&proto.Message{
+							Id:   uint64(890),
+							Kind: proto.Message_TEXT,
+							Size: uint64(564)},
+						&proto.Message{
+							Id:   uint64(892),
+							Kind: proto.Message_TEXT,
+							Size: uint64(565)}},
+						post.Messages)
+					test.testNumberOfProtoStructFields(post, 4)
+					test.testNumberOfProtoStructFields(post.Messages[0], 3)
+					test.assert.Equal(1, len(proto.Post_Kind_value))
+					test.assert.Equal(1, len(proto.Message_Kind_value))
+				}).Return(nil)
+			}
+			response.EXPECT().Context().Return(ctx)
+			return test.client.ReadPosts(nil, response)
+		},
+		func() {
+			post := mock_au10.NewMockPost(test.mock)
+			post.EXPECT().GetID().Return(au10.PostID(987))
+			post.EXPECT().GetKind().Return(au10.PostKindVocal)
+			post.EXPECT().GetTime().Return(time.Unix(0, 567))
+			message1 := mock_au10.NewMockMessage(test.mock)
+			message1.EXPECT().GetID().Return(au10.MessageID(890))
+			message1.EXPECT().GetKind().Return(au10.MessageKindText)
+			message1.EXPECT().GetSize().Return(uint64(564))
+			message2 := mock_au10.NewMockMessage(test.mock)
+			message2.EXPECT().GetID().Return(au10.MessageID(892))
+			message2.EXPECT().GetKind().Return(au10.MessageKindText)
+			message2.EXPECT().GetSize().Return(uint64(565))
+			post.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
+			postsChan <- post
+		},
+		[]struct {
+			errText string
+			run     func()
+		}{
+			struct {
+				errText string
+				run     func()
+			}{
+				errText: "unknown post kind 1",
+				run: func() {
+					post := mock_au10.NewMockPost(test.mock)
+					post.EXPECT().GetID().Return(au10.PostID(987))
+					post.EXPECT().GetKind().Return(au10.PostKind(1))
+					post.EXPECT().GetTime().Return(time.Unix(0, 567))
+					message := mock_au10.NewMockMessage(test.mock)
+					post.EXPECT().GetMessages().Return([]au10.Message{message, message})
+					postsChan <- post
+				}},
+			struct {
+				errText string
+				run     func()
+			}{
+				errText: "unknown message kind 1",
+				run: func() {
+					post := mock_au10.NewMockPost(test.mock)
+					post.EXPECT().GetID().Return(au10.PostID(987))
+					post.EXPECT().GetKind().Return(au10.PostKindVocal)
+					post.EXPECT().GetTime().Return(time.Unix(0, 567))
+					message1 := mock_au10.NewMockMessage(test.mock)
+					message1.EXPECT().GetID().Return(au10.MessageID(890))
+					message1.EXPECT().GetKind().Return(au10.MessageKindText)
+					message1.EXPECT().GetSize().Return(uint64(564))
+					message2 := mock_au10.NewMockMessage(test.mock)
+					message2.EXPECT().GetKind().Return(au10.MessageKind(1))
+					post.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
+					postsChan <- post
+				}}},
+		func(err error) { errChan <- err },
+		func() {
+			close(postsChan)
+			postsChan = nil
+		})
+}
+
+func Test_Accesspoint_Client_AddPost_PermissionDenied(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	test.log.EXPECT().Error(
+		"[Test.345.test login] Permission denied for posts (RPC error %d).",
+		codes.PermissionDenied)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+
+	test.service.EXPECT().GetPosts().Return(posts)
+
+	response, err := test.client.AddPost(nil)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
+}
+
+func Test_Accesspoint_Client_AddPost_InvalidArgument(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	posts := mock_au10.NewMockPosts(test.mock)
+	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
+
+	test.log.EXPECT().Error(
+		"[Test.345.test login] Unknown post kind 1 (RPC error %d).",
+		codes.InvalidArgument)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	request := &proto.PostAddRequest{
+		Kind: proto.Post_Kind(len(proto.Post_Kind_name))}
+	test.testNumberOfProtoStructFields(request, 2)
+	response, err := test.client.AddPost(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	test.log.EXPECT().Error(
+		"[Test.345.test login] Unknown message kind 1 (RPC error %d).",
+		codes.InvalidArgument)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	request.Kind = proto.Post_VOCAL
+	request.Messages = []*proto.PostAddRequest_MessageDeclaration{
+		&proto.PostAddRequest_MessageDeclaration{Kind: proto.Message_TEXT},
+		&proto.PostAddRequest_MessageDeclaration{Kind: 1}}
+	test.testNumberOfProtoStructFields(request, 2)
+	test.testNumberOfProtoStructFields(request.Messages[0], 2)
+	response, err = test.client.AddPost(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+}
+
+func (test *clientTest) testAddPostExecution(
+	kind au10.PostKind,
+	requestKind proto.Post_Kind) {
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+
+	messages := make([]au10.Message, 2)
+	message := mock_au10.NewMockMessage(test.mock)
+	message.EXPECT().GetID().Return(au10.MessageID(765))
+	messages[0] = message
+	message = mock_au10.NewMockMessage(test.mock)
+	message.EXPECT().GetID().Return(au10.MessageID(543))
+	messages[1] = message
+
+	post := mock_au10.NewMockPost(test.mock)
+	post.EXPECT().GetID().Return(au10.PostID(987))
+	post.EXPECT().GetMessages().Return(messages)
+
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	posts.EXPECT().AddPost(
+		kind,
+		[]au10.MessageDeclaration{
+			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 123},
+			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 456}},
+		test.user).
+		Return(post, nil)
+	test.service.EXPECT().GetPosts().Return(posts)
+
+	request := &proto.PostAddRequest{
+		Kind: requestKind,
+		Messages: []*proto.PostAddRequest_MessageDeclaration{
+			&proto.PostAddRequest_MessageDeclaration{
+				Kind: proto.Message_TEXT,
+				Size: 123},
+			&proto.PostAddRequest_MessageDeclaration{
+				Kind: proto.Message_TEXT,
+				Size: 456}}}
+	test.assert.Equal(1, len(proto.Message_Kind_name))
+	test.testNumberOfProtoStructFields(request, 2)
+	test.testNumberOfProtoStructFields(request.Messages[0], 2)
+
+	response, err := test.client.AddPost(request)
+	test.assert.NotNil(response)
+	test.testNumberOfProtoStructFields(response, 2)
+	test.assert.Equal("987", response.PostID)
+	test.assert.Equal([]string{"765", "543"}, response.MessageIds)
+	test.assert.NoError(err)
+}
+
+func Test_Accesspoint_Client_AddPost_Execution(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	test.testAddPostExecution(au10.PostKindVocal, proto.Post_VOCAL)
+	test.assert.Equal(1, len(proto.Post_Kind_name))
+}
+
+func Test_Accesspoint_Client_AddPost_ExecutionError(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to post: "test error" (RPC error %d).`,
+		codes.Internal)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	posts.EXPECT().AddPost(
+		au10.PostKindVocal,
+		[]au10.MessageDeclaration{},
+		test.user).
+		Return(nil, errors.New("test error"))
+	test.service.EXPECT().GetPosts().Return(posts)
+
+	request := &proto.PostAddRequest{
+		Kind:     proto.Post_VOCAL,
+		Messages: []*proto.PostAddRequest_MessageDeclaration{}}
+	test.testNumberOfProtoStructFields(request, 2)
+
+	response, err := test.client.AddPost(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+}
+
+func Test_Accesspoint_Client_WriteMessageChunk_PermissionDenied(t *testing.T) {
+	testClientMessagePermissionDenied(
+		t,
+		"write",
+		func(client ap.Client, postID, messageID string) (interface{}, error) {
+			return client.WriteMessageChunk(
+				&proto.MessageChunkWriteRequest{PostID: postID, MessageID: messageID})
+		})
+}
+
+func Test_Accesspoint_Client_WriteMessageChunk_InvalidArgument(t *testing.T) {
+	testClientMessageInvalidArgument(
+		t,
+		"write",
+		func(client ap.Client, postID, messageID string) (interface{}, error) {
+			return client.WriteMessageChunk(
+				&proto.MessageChunkWriteRequest{PostID: postID, MessageID: messageID})
+		})
+}
+
+func Test_Accesspoint_Client_WriteMessageChunk_Execution(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	message := test.prepareMessageExecution()
+
+	request := &proto.MessageChunkWriteRequest{
+		PostID:    "123",
+		MessageID: "456",
+		Chunk:     []byte("some bytes")}
+	test.testNumberOfProtoStructFields(request, 3)
+	message.EXPECT().Append(request.Chunk).Return(nil)
+	response, err := test.client.WriteMessageChunk(request)
+	test.assert.NotNil(response)
+	test.testNumberOfProtoStructFields(response, 0)
+	test.assert.NoError(err)
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to write chunk "123"/"456": "test error" (RPC error %d).`,
+		codes.Internal)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	message.EXPECT().Append(request.Chunk).Return(errors.New("test error"))
+	response, err = test.client.WriteMessageChunk(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+}
+
+func Test_Accesspoint_Client_ReadMessage_PermissionDenied(t *testing.T) {
+	testClientMessagePermissionDenied(
+		t,
+		"read",
+		func(client ap.Client, postID, messageID string) (interface{}, error) {
+			return nil, client.ReadMessage(
+				&proto.MessageReadRequest{PostID: postID, MessageID: messageID}, nil)
+		})
+}
+
+func Test_Accesspoint_Client_ReadMessage_InvalidArgument(t *testing.T) {
+	testClientMessageInvalidArgument(
+		t,
+		"read",
+		func(client ap.Client, postID, messageID string) (interface{}, error) {
+			return nil, client.ReadMessage(
+				&proto.MessageReadRequest{PostID: postID, MessageID: messageID}, nil)
+		})
+}
+
+func Test_Accesspoint_Client_ReadMessage_Execution(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	message := test.prepareMessageExecution()
+	props := &proto.Props{MaxChunkSize: 3}
+	test.accesspoint.EXPECT().GetGlobalProps().MinTimes(1).Return(props)
+
+	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
+	test.testNumberOfProtoStructFields(request, 2)
+
+	message.EXPECT().GetSize().Return(uint64(7))
+	message.EXPECT().Load(gomock.Any(), uint64(6)).Do(
+		func(buffer *[]byte, offset uint64) {
+			test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+			*buffer = []byte("6")
+		}).
+		Return(nil).
+		After(message.EXPECT().Load(gomock.Any(), uint64(3)).Do(
+			func(buffer *[]byte, offset uint64) {
+				test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+				*buffer = []byte("345")
+			}).
+			Return(nil).After(
+			message.EXPECT().Load(gomock.Any(), uint64(0)).Do(
+				func(buffer *[]byte, offset uint64) {
+					test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+					*buffer = []byte("012")
+				}).
+				Return(nil)))
+
+	chunkIndexVar := 0
+	chunkIndex := &chunkIndexVar
+	stream := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
+	stream.EXPECT().Send(gomock.Any()).Times(3).
+		Do(func(chunk *proto.MessageChunk) {
+			switch *chunkIndex {
+			case 0:
+				test.assert.Equal([]byte("012"), chunk.Chunk)
+			case 1:
+				test.assert.Equal([]byte("345"), chunk.Chunk)
+			case 2:
+				test.assert.Equal([]byte("6"), chunk.Chunk)
+			default:
+				test.assert.Equal(0, *chunkIndex)
+			}
+			*chunkIndex = *chunkIndex + 1
+		})
+
+	err := test.client.ReadMessage(request, stream)
+	test.assert.NoError(err)
+}
+
+func Test_Accesspoint_Client_ReadMessage_ExecutionErrors(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	message := test.prepareMessageExecution()
+	props := &proto.Props{MaxChunkSize: 3}
+	test.accesspoint.EXPECT().GetGlobalProps().MinTimes(1).Return(props)
+
+	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
+	test.testNumberOfProtoStructFields(request, 2)
+	message.EXPECT().GetSize().MinTimes(1).Return(uint64(7))
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to load chunk "123"/"456"/3: "test load error" (RPC error %d).`,
+		codes.Internal)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	message.EXPECT().Load(gomock.Any(), uint64(3)).
+		Return(errors.New("test load error")).
+		After(message.EXPECT().Load(gomock.Any(), uint64(0)).Return(nil))
+	stream := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
+	stream.EXPECT().Send(gomock.Any()).Return(nil)
+	err := test.client.ReadMessage(request, stream)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to send chunk "123"/"456"/3: "test send error" (RPC error %d).`,
+		codes.Internal)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	message.EXPECT().Load(gomock.Any(), uint64(3)).
+		Return(nil).
+		After(message.EXPECT().Load(gomock.Any(), uint64(0)).Return(nil))
+	stream.EXPECT().Send(gomock.Any()).
+		Return(errors.New("test send error")).
+		After(stream.EXPECT().Send(gomock.Any()).Return(nil))
+	err = test.client.ReadMessage(request, stream)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+}
+
+func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
+
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	posts := mock_au10.NewMockPosts(test.mock)
+	posts.EXPECT().GetMembership().MinTimes(1).Return(postsMembership)
+	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
+
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	response := test.client.GetAllowedMethods()
+	test.assert.True(response.ReadLog)
+	test.assert.True(response.ReadPosts)
+	test.assert.True(response.AddPost)
+	test.testNumberOfProtoStructFields(response, 3)
+
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	response = test.client.GetAllowedMethods()
+	test.assert.False(response.ReadLog)
+	test.assert.True(response.ReadPosts)
+	test.assert.True(response.AddPost)
+	test.testNumberOfProtoStructFields(response, 3)
+
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	response = test.client.GetAllowedMethods()
+	test.assert.True(response.ReadLog)
+	test.assert.False(response.ReadPosts)
+	test.assert.False(response.AddPost)
+	test.testNumberOfProtoStructFields(response, 3)
 }

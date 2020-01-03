@@ -15,7 +15,7 @@ import (
 var (
 	address = flag.String("address", "localhost:443",
 		"Au10 service access point address")
-	command = flag.String("cmd", "log", "command: log")
+	command = flag.String("cmd", "", "command: log, posts")
 	login   = flag.String("login", "", "login")
 )
 
@@ -31,9 +31,12 @@ func main() {
 		client.Auth(*login)
 	}
 
-	if *command == "log" {
+	switch *command {
+	case "log":
 		client.ReadLog()
-	} else {
+	case "posts":
+		client.ReadPosts()
+	default:
 		log.Fatalf(`Unknown command: "%s".`, *command)
 	}
 

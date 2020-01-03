@@ -22,8 +22,8 @@ service Au10 {
   // AddPost adds new posts into a network. The post will be unpublished until
   // all defined messages will be uploaded.
   rpc AddPost(PostAddRequest) returns (PostAddResponse);
-    // MessageChunkWrite writes a part of a message.
-  rpc MessageChunkWrite(MessageChunkWriteRequest)
+  // WriteMessageChunk writes a part of a message.
+  rpc WriteMessageChunk(MessageChunkWriteRequest)
     returns (MessageChunkWriteResponse);
 }
 
@@ -42,17 +42,24 @@ message AuthRequest {
 }
 // AuthResponse describes auth request result.
 message AuthResponse {
+  // AllowedMethods is a structure with list of allowed methods. All unlisted
+  // in the structure methods - always is allowed.
+  message AllowedMethods {
+    bool readLog = 1;
+    bool readPosts = 2;
+    bool addPost = 3;
+  }
   // Auth success flag.
   bool isSuccess = 1;
   // Actual allowed method list.
-   repeated string methods = 2;
+  AllowedMethods allowedMethods = 2;
 }
 
 // LogRecord describes log record.
 message LogRecord {
   // Global sequence number.
   int64 seqNum = 1; 
-  // Unix time in nano-seconds.
+  // Unix time in nano-seconds in UTC.
   int64 time = 2;
   // Text
   string text = 3;
@@ -68,29 +75,29 @@ message LogReadRequest {}
 
 // Post describes post entity.
 message Post {
-  // Type is a post type description.
-  enum Type {
-    POST = 0;
-    VOCAL = 1;
-    MOMENT = 2;
+  // Kind is a post kind description.
+  enum Kind {
+    VOCAL = 0;
   }
   // ID.
   uint64 id = 1;
-  // Type.
-  Type type = 2;
+  // Kind.
+  Kind kind = 2;
+  // Unix time in nano-seconds in UTC.
+  int64 time = 3;
   // Attached message list.
-  repeated Message messages = 3;
+  repeated Message messages = 4;
 }
 message Message {
-  // Type is a message type description.
-  enum Type {
+  // Kind is a message kind description.
+  enum Kind {
     // Plain text.
     TEXT = 0;
   }
   // ID.
   uint64 id = 1;
-  // Type.
-  Type type = 2;
+  // Kind.
+  Kind kind = 2;
   // Size in bytes.
   uint64 size = 3;
 }
@@ -101,9 +108,9 @@ message PostsReadRequest {}
 // MessageReadRequest describes message reading request.
 message MessageReadRequest {
   // Post ID.
-  string postId = 1;
+  string postID = 1;
   // Message ID.
-  string messageId = 2;
+  string messageID = 2;
 }
 // MessageChunk describes message chunk in reading request response.
 message MessageChunk {
@@ -115,20 +122,20 @@ message MessageChunk {
 message PostAddRequest {
   // MessageDeclaration describes a message which will be attached to a post.
   message MessageDeclaration {
-    // Message type.
-    Message.Type type = 1;
+    // Message kind.
+    Message.Kind kind = 1;
     // Message size in bytes.
     uint64 size = 2;
   }
-  // Type.
-  Post.Type type = 2;
+  // Kind.
+  Post.Kind kind = 2;
   // The messages general info in the post.
   repeated MessageDeclaration messages = 1;
 }
 // PostAddResponse describes post adding request response.
 message PostAddResponse {
   // ID of new post.
-  string postId = 1;
+  string postID = 1;
   // The message ID list, in the same order as was posted.
   repeated string messageIds = 2;
 }
@@ -136,9 +143,9 @@ message PostAddResponse {
 // MessageChunkWriteRequest describes request to write part of message content.
 message MessageChunkWriteRequest {
   // Post ID.
-  string postId = 1;
+  string postID = 1;
   // Message ID.
-  string messageId = 2;
+  string messageID = 2;
   // Chunk data. It has to have a size between one byte and
   // PropsResponse.maxChunkSize inclusive.
   bytes chunk = 4;

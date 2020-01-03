@@ -104,7 +104,7 @@ func (service *logService) InitSubscriptionService() error {
 	service.reader = service.service.GetFactory().CreateStreamReader(
 		[]string{LogStreamTopic},
 		func(source *sarama.ConsumerMessage) (interface{}, error) {
-			return CreateLogRecord(source)
+			return ConvertSaramaMessageIntoLogRecord(source)
 		},
 		service.service)
 	return nil
@@ -112,7 +112,7 @@ func (service *logService) InitSubscriptionService() error {
 
 func (service *logService) Subscribe() (LogSubscription, error) {
 	if service.reader == nil {
-		panic("log subscription service is not initialized")
+		panic("log subscription service not initialized")
 	}
 	return createLogSubscription(service)
 }
@@ -243,8 +243,10 @@ func (message *logRecord) GetNodeName() string {
 	return message.data.Node
 }
 
-// CreateLogRecord creates new LogRecord from stream data.
-func CreateLogRecord(source *sarama.ConsumerMessage) (LogRecord, error) {
+// ConvertSaramaMessageIntoLogRecord creates new LogRecord from stream data.
+func ConvertSaramaMessageIntoLogRecord(
+	source *sarama.ConsumerMessage) (LogRecord, error) {
+
 	result := &logRecord{message: source}
 	if err := json.Unmarshal(source.Value, &result.data); err != nil {
 		return nil, fmt.Errorf(`failed to parse log-record: "%s"`, err)

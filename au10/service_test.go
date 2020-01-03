@@ -154,7 +154,7 @@ func Test_Au10_Service_Users(t *testing.T) {
 	test := createServiceTest(t)
 	defer test.close()
 
-	test.assert.PanicsWithValue("users service is not initialized", func() {
+	test.assert.PanicsWithValue("users service not initialized", func() {
 		test.service.GetUsers()
 	})
 
@@ -180,7 +180,7 @@ func Test_Au10_Service_Posts(t *testing.T) {
 	test := createServiceTest(t)
 	defer test.close()
 
-	test.assert.PanicsWithValue("posts service is not initialized", func() {
+	test.assert.PanicsWithValue("posts service not initialized", func() {
 		test.service.GetPosts()
 	})
 

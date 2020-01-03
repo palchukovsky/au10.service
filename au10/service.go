@@ -144,7 +144,7 @@ func (service *service) InitUsers() error {
 
 func (service *service) GetUsers() Users {
 	if service.users == nil {
-		panic("users service is not initialized")
+		panic("users service not initialized")
 	}
 	return service.users
 }
@@ -159,7 +159,7 @@ func (service *service) InitPosts() error {
 
 func (service *service) GetPosts() Posts {
 	if service.posts == nil {
-		panic("posts service is not initialized")
+		panic("posts service not initialized")
 	}
 	return service.posts
 }

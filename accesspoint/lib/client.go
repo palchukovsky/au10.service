@@ -2,6 +2,7 @@ package accesspoint
 
 import (
 	fmt "fmt"
+	"strconv"
 	"strings"
 
 	proto "bitbucket.org/au10/service/accesspoint/proto"
@@ -18,29 +19,37 @@ type Client interface {
 	LogDebug(format string, args ...interface{})
 	CreateError(code codes.Code, descFormat string, args ...interface{}) error
 
-	GetAvailableMethods() []string
+	GetAllowedMethods() *proto.AuthResponse_AllowedMethods
 
 	Auth(*proto.AuthRequest) (*string, error)
 	ReadLog(*proto.LogReadRequest, proto.Au10_ReadLogServer) error
 	ReadPosts(*proto.PostsReadRequest, proto.Au10_ReadPostsServer) error
 	ReadMessage(*proto.MessageReadRequest, proto.Au10_ReadMessageServer) error
 	AddPost(request *proto.PostAddRequest) (*proto.PostAddResponse, error)
-	MessageChunkWrite(*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error)
+	WriteMessageChunk(*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error)
 }
 
 // CreateClient creates new Client instance.
-func CreateClient(requestID uint64, user au10.User, service Service) Client {
-	return &client{service: service, requestID: requestID, user: user}
+func CreateClient(
+	requestID uint64, request string, user au10.User, service Service) Client {
+
+	return &client{
+		service:   service,
+		request:   request,
+		requestID: requestID,
+		user:      user}
 }
 
 type client struct {
 	service   Service
 	requestID uint64
+	request   string
 	user      au10.User
 }
 
 func (client *client) getLogHeader(format string) string {
-	return fmt.Sprintf("%d.%s: ", client.requestID, client.user.GetLogin()) +
+	return fmt.Sprintf("[%s.%d.%s] ",
+		client.request, client.requestID, client.user.GetLogin()) +
 		format
 }
 func (client *client) LogError(format string, args ...interface{}) {
@@ -86,7 +95,7 @@ func (client *client) CreateError(
 		client.LogError("RPC error %d.", code)
 	}
 	var externalDesc string
-	if client.service.GetAu10().Log().GetMembership().IsAvailable(client.user.GetRights()) {
+	if client.service.GetAu10().Log().GetMembership().IsAllowed(client.user.GetRights()) {
 		externalDesc = desc
 	} else {
 		var ok bool
@@ -118,66 +127,195 @@ func (client *client) ReadLog(
 	request *proto.LogReadRequest, stream proto.Au10_ReadLogServer) error {
 
 	log := client.service.GetAu10().Log()
-	if err := client.checkRights(log, "read log"); err != nil {
+	if err := client.checkRights(log, "log"); err != nil {
 		return err
 	}
 	return client.runLogSubscription(log, stream)
 }
 
 func (client *client) ReadPosts(
-	*proto.PostsReadRequest, proto.Au10_ReadPostsServer) error {
+	request *proto.PostsReadRequest, stream proto.Au10_ReadPostsServer) error {
 
 	posts := client.service.GetAu10().GetPosts()
-	if err := client.checkRights(posts, "read posts"); err != nil {
+	if err := client.checkRights(posts, "posts"); err != nil {
 		return err
 	}
-	return client.CreateError(codes.Unimplemented, `not implemented yet`)
+	return client.runPostsSubscription(posts, stream)
 }
 
 func (client *client) ReadMessage(
-	*proto.MessageReadRequest, proto.Au10_ReadMessageServer) error {
+	request *proto.MessageReadRequest,
+	stream proto.Au10_ReadMessageServer) error {
 
-	return client.CreateError(codes.Unimplemented, `not implemented yet`)
+	message, err := client.getMessage(request.PostID, request.MessageID)
+	if err != nil {
+		return err
+	}
+	chunkSize := client.service.GetGlobalProps().MaxChunkSize
+	chunk := &proto.MessageChunk{Chunk: make([]byte, chunkSize)}
+	messageSize := message.GetSize()
+	for offset := uint64(0); offset <= messageSize; offset += chunkSize {
+		if err := message.Load(&chunk.Chunk, offset); err != nil {
+			return client.CreateError(codes.Internal,
+				`failed to load chunk "%s"/"%s"/%d: "%s"`,
+				request.PostID, request.MessageID, offset, err)
+		}
+		if err := stream.Send(chunk); err != nil {
+			return client.CreateError(codes.Internal,
+				`failed to send chunk "%s"/"%s"/%d: "%s"`,
+				request.PostID, request.MessageID, offset, err)
+		}
+	}
+	return nil
+}
+
+func (client *client) convertRequestPostKindToKind(
+	request proto.Post_Kind) (au10.PostKind, error) {
+
+	switch request {
+	case proto.Post_VOCAL:
+		return au10.PostKindVocal, nil
+	}
+	return 0, client.CreateError(codes.InvalidArgument,
+		"unknown post kind %d", request)
+}
+
+func (client *client) convertRequestMessageKindToKind(
+	request proto.Message_Kind) (au10.MessageKind, error) {
+
+	switch request {
+	case proto.Message_TEXT:
+		return au10.MessageKindText, nil
+	}
+	return 0, client.CreateError(codes.InvalidArgument,
+		"unknown message kind %d", request)
 }
 
 func (client *client) AddPost(
 	request *proto.PostAddRequest) (*proto.PostAddResponse, error) {
 
 	posts := client.service.GetAu10().GetPosts()
-	err := client.checkRights(posts, "access posts")
+	err := client.checkRights(posts, "posts")
 	if err != nil {
 		return nil, err
 	}
-	post := au10.CreatePostData()
-	err = posts.Add(client.user, post)
+
+	var kind au10.PostKind
+	kind, err = client.convertRequestPostKindToKind(request.Kind)
+	if err != nil {
+		return nil, err
+	}
+
+	messagesRequest := make([]au10.MessageDeclaration, len(request.Messages))
+	for i, m := range request.Messages {
+		kind, err := client.convertRequestMessageKindToKind(m.Kind)
+		if err != nil {
+			return nil, err
+		}
+		messagesRequest[i] = au10.MessageDeclaration{Kind: kind, Size: m.Size}
+	}
+
+	var post au10.Post
+	post, err = posts.AddPost(kind, messagesRequest, client.user)
 	if err != nil {
 		return nil, client.CreateError(codes.Internal, `failed to post: "%s"`, err)
 	}
-	return &proto.PostAddResponse{}, nil
+	messages := post.GetMessages()
+	response := &proto.PostAddResponse{
+		PostID:     strconv.FormatUint(uint64(post.GetID()), 10),
+		MessageIds: make([]string, len(messages))}
+	for i, m := range messages {
+		response.MessageIds[i] = strconv.FormatUint(uint64(m.GetID()), 10)
+	}
+	return response, nil
 }
 
-func (client *client) MessageChunkWrite(
-	*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
+func (client *client) WriteMessageChunk(
+	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
 
-	return nil, client.CreateError(codes.Unimplemented, `not implemented yet`)
+	message, err := client.getMessage(request.PostID, request.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	if err = message.Append(request.Chunk); err != nil {
+		return nil, client.CreateError(codes.Internal,
+			`failed to write chunk "%s"/"%s": "%s"`,
+			request.PostID, request.MessageID, err)
+	}
+	return &proto.MessageChunkWriteResponse{}, nil
 }
 
-func (client *client) checkRights(entity au10.Member, action string) error {
-	if !entity.GetMembership().IsAvailable(client.user.GetRights()) {
+func (client *client) getMessage(
+	requestPostID, requestMessageID string) (au10.Message, error) {
+
+	posts := client.service.GetAu10().GetPosts()
+	if err := client.checkRights(posts, "posts"); err != nil {
+		return nil, err
+	}
+
+	intPostID, err := strconv.ParseUint(requestPostID, 10, 64)
+	if err != nil {
+		return nil, client.CreateError(codes.InvalidArgument,
+			`failed to parse post ID "%s"/"%s": "%s"`,
+			requestPostID, requestMessageID, err)
+	}
+	var intMessageID uint64
+	intMessageID, err = strconv.ParseUint(requestMessageID, 10, 64)
+	if err != nil {
+		return nil, client.CreateError(codes.InvalidArgument,
+			`failed to parse message ID "%s"/"%s": "%s"`,
+			requestPostID, requestMessageID, err)
+	}
+
+	var post au10.Post
+	if post, err = posts.GetPost(au10.PostID(intPostID)); err != nil {
+		return nil, client.CreateError(codes.InvalidArgument,
+			`failed to get post "%s"/"%s": "%s"`,
+			requestPostID, requestMessageID, err)
+	}
+	err = client.checkRights(post, `post "%s"/"%s"`,
+		requestPostID, requestMessageID)
+	if err != nil {
+		return nil, err
+	}
+	messageID := au10.MessageID(intMessageID)
+	var message au10.Message
+	for _, m := range post.GetMessages() {
+		if m.GetID() == messageID {
+			message = m
+			break
+		}
+	}
+	if message == nil {
+		return nil, client.CreateError(codes.InvalidArgument,
+			`failed to find message "%s"/"%s"`, requestPostID, requestMessageID)
+	}
+	err = client.checkRights(message, `message "%s"/"%s"`,
+		requestPostID, requestMessageID)
+	if err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+func (client *client) checkRights(
+	entity au10.Member,
+	format string,
+	args ...interface{}) error {
+
+	if !entity.GetMembership().IsAllowed(client.user.GetRights()) {
 		return client.CreateError(codes.PermissionDenied,
-			`permission denied to %s`, action)
+			"Permission denied for "+format, args...)
 	}
 	return nil
 }
 
-func (client *client) GetAvailableMethods() []string {
-	result := []string{"auth"}
+func (client *client) GetAllowedMethods() *proto.AuthResponse_AllowedMethods {
 	rights := client.user.GetRights()
-	if client.service.GetAu10().Log().GetMembership().IsAvailable(rights) {
-		result = append(result, "readLog")
-	}
-	if client.service.GetAu10().GetPosts().GetMembership().IsAvailable(rights) {
-		result = append(result, "post")
-	}
-	return result
+	au10 := client.service.GetAu10()
+	arePostsAvailable := au10.GetPosts().GetMembership().IsAllowed(rights)
+	return &proto.AuthResponse_AllowedMethods{
+		ReadLog:   au10.Log().GetMembership().IsAllowed(rights),
+		ReadPosts: arePostsAvailable,
+		AddPost:   arePostsAvailable}
 }

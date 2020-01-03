@@ -25,7 +25,7 @@ func Test_Accesspoint_Service_Methods(test *testing.T) {
 
 	grpc := mock_ap.NewMockGrpc(mock)
 	defaultUser := mock_au10.NewMockUser(mock)
-	createClient := func(uint64, au10.User, ap.Service) ap.Client {
+	createClient := func(uint64, string, au10.User, ap.Service) ap.Client {
 		assert.True(false)
 		return nil
 	}
@@ -46,11 +46,14 @@ func Test_Accesspoint_Service_Methods(test *testing.T) {
 	assert.True(accesspoint.(ap.Service).GetAu10() == service)
 
 	logSubscriptionInfo := accesspoint.(ap.Service).GetLogSubscriptionInfo()
-	assert.Equal("log", logSubscriptionInfo.Name)
 	assert.Equal(uint32(0), logSubscriptionInfo.NumberOfSubscribers)
-	logSubscriptionInfoReflection := reflect.Indirect(
-		reflect.ValueOf(logSubscriptionInfo))
-	assert.Equal(2, logSubscriptionInfoReflection.NumField())
+	assert.Equal(1, reflect.Indirect(
+		reflect.ValueOf(logSubscriptionInfo)).NumField())
+
+	postsSubscriptionInfo := accesspoint.(ap.Service).GetPostsSubscriptionInfo()
+	assert.Equal(uint32(0), postsSubscriptionInfo.NumberOfSubscribers)
+	assert.Equal(1, reflect.Indirect(
+		reflect.ValueOf(postsSubscriptionInfo)).NumField())
 
 	assert.Equal(uint32(1), accesspoint.(ap.Service).RegisterSubscriber())
 	assert.Equal(uint32(2), accesspoint.(ap.Service).RegisterSubscriber())
@@ -70,9 +73,13 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	defaultUser := mock_au10.NewMockUser(mock)
 	expectedUser := &defaultUser
 	createClient := func(
-		requestID uint64, user au10.User, service ap.Service) ap.Client {
+		requestID uint64,
+		request string,
+		user au10.User,
+		service ap.Service) ap.Client {
 
 		assert.Equal(nextRequestID, requestID)
+		assert.Equal("Auth", request)
 		nextRequestID++
 		assert.True(user == *expectedUser)
 		assert.NotNil(service)
@@ -87,7 +94,8 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	authRequest := &proto.AuthRequest{}
 	authExpectedResponse := "test auth response"
 	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAvailableMethods().Return([]string{"Method 1", "Method 2"})
+	allowedMethods := &proto.AuthResponse_AllowedMethods{}
+	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
 	grpc.EXPECT().
 		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
 		Return(nil)
@@ -97,13 +105,13 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	responseReflection := reflect.Indirect(reflect.ValueOf(response))
 	assert.Equal(5, responseReflection.NumField())
 	assert.True(response.IsSuccess)
-	assert.Equal([]string{"Method 1", "Method 2"}, response.Methods)
+	assert.True(allowedMethods == response.AllowedMethods)
 	assert.NoError(err)
 
 	// Metadata without auth
 	authExpectedResponse += "!"
 	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAvailableMethods().Return([]string{"Method 1", "Method 2"})
+	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
 	grpc.EXPECT().
 		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
 		Return(nil)
@@ -114,7 +122,7 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	assert.NotNil(response)
 	assert.Equal(5, responseReflection.NumField())
 	assert.True(response.IsSuccess)
-	assert.Equal([]string{"Method 1", "Method 2"}, response.Methods)
+	assert.True(allowedMethods == response.AllowedMethods)
 	assert.NoError(err)
 
 	// Metadata with auth, but error at session finding
@@ -138,7 +146,7 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	// Metadata with auth, but filed to find session
 	authExpectedResponse += "!"
 	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAvailableMethods().Return([]string{"Method 1", "Method 2"})
+	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
 	grpc.EXPECT().
 		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
 		Return(nil)
@@ -151,13 +159,13 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	assert.NotNil(response)
 	assert.Equal(5, responseReflection.NumField())
 	assert.True(response.IsSuccess)
-	assert.Equal([]string{"Method 1", "Method 2"}, response.Methods)
+	assert.True(allowedMethods == response.AllowedMethods)
 	assert.NoError(err)
 
 	// Already authed
 	authExpectedResponse += "!"
 	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAvailableMethods().Return([]string{"Method 1", "Method 2"})
+	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
 	grpc.EXPECT().
 		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
 		Return(nil)
@@ -172,7 +180,7 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	assert.NotNil(response)
 	assert.Equal(5, responseReflection.NumField())
 	assert.True(response.IsSuccess)
-	assert.Equal([]string{"Method 1", "Method 2"}, response.Methods)
+	assert.True(allowedMethods == response.AllowedMethods)
 	assert.NoError(err)
 
 	// Auth error
@@ -192,7 +200,7 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	// Wrong creds
 	authExpectedResponse += "!"
 	client.EXPECT().Auth(authRequest).Return(nil, nil)
-	client.EXPECT().GetAvailableMethods().Return([]string{"Method 1", "Method 2"})
+	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
 	ctx.EXPECT().
 		Value(gomock.Any()).
 		Return(metadata.MD{"auth": []string{authExpectedResponse}})
@@ -202,7 +210,7 @@ func Test_Accesspoint_Service_Auth(test *testing.T) {
 	assert.NotNil(response)
 	assert.Equal(5, responseReflection.NumField())
 	assert.False(response.IsSuccess)
-	assert.Equal([]string{"Method 1", "Method 2"}, response.Methods)
+	assert.True(allowedMethods == response.AllowedMethods)
 	assert.NoError(err)
 
 	// Failed to store auth token
@@ -249,7 +257,9 @@ func createTestServiceMethodTest(test *testing.T) *serviceMethodTest {
 	result.accesspoint = ap.CreateAu10Server(
 		&proto.Props{},
 		mock_au10.NewMockUser(result.mock),
-		func(uint64, au10.User, ap.Service) ap.Client { return result.client },
+		func(uint64, string, au10.User, ap.Service) ap.Client {
+			return result.client
+		},
 		result.grpc,
 		result.service)
 	return result
@@ -359,15 +369,15 @@ func Test_Accesspoint_Service_MessageChunkWrite(t *testing.T) {
 	defer test.close()
 
 	test.testClientCreationError(func() (interface{}, error) {
-		return test.accesspoint.MessageChunkWrite(test.ctx, nil)
+		return test.accesspoint.WriteMessageChunk(test.ctx, nil)
 	})
 
 	request := &proto.MessageChunkWriteRequest{}
 	expectedResponse := &proto.MessageChunkWriteResponse{}
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
-	test.client.EXPECT().MessageChunkWrite(request).
+	test.client.EXPECT().WriteMessageChunk(request).
 		Return(expectedResponse, errors.New("test error"))
-	response, err := test.accesspoint.MessageChunkWrite(test.ctx, request)
+	response, err := test.accesspoint.WriteMessageChunk(test.ctx, request)
 	test.assert.True(response == expectedResponse)
 	test.assert.EqualError(err, "test error")
 }

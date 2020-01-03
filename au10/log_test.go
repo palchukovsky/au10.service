@@ -80,7 +80,7 @@ func Test_Au10_Log(test *testing.T) {
 		Text:     "test log error record 2"}).Return(errors.New("test error"))
 	log.Error("test log %s record 2", "error")
 
-	assert.PanicsWithValue("log subscription service is not initialized",
+	assert.PanicsWithValue("log subscription service not initialized",
 		func() { log.Subscribe() })
 
 	reader := mock_au10.NewMockStreamReader(mock)
@@ -171,7 +171,7 @@ func Test_Au10_Log(test *testing.T) {
 			}
 		}
 	}()
-	record, _ := au10.CreateLogRecord(&sarama.ConsumerMessage{
+	record, _ := au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
 		Value:  []byte(`{}`),
 		Offset: 123})
 	handleSubscription(record)
@@ -184,7 +184,7 @@ func Test_Au10_CreateLogRecord(test *testing.T) {
 	assert := assert.New(test)
 	now := time.Now()
 
-	record, err := au10.CreateLogRecord(&sarama.ConsumerMessage{
+	record, err := au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
 		Key: []byte("test key"),
 		Value: []byte(
 			`{"Node": "test node name", "Severity": 2, "Text": "test log record test"}`),
@@ -201,7 +201,7 @@ func Test_Au10_CreateLogRecord(test *testing.T) {
 	assert.Equal("test key", record.GetNodeType())
 	assert.Equal("test node name", record.GetNodeName())
 
-	record, err = au10.CreateLogRecord(&sarama.ConsumerMessage{
+	record, err = au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
 		Key:       []byte("test key"),
 		Value:     []byte(`{`),
 		Offset:    123,

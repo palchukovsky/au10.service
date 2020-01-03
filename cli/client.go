@@ -61,7 +61,7 @@ func (client *Client) Auth(login string) {
 	} else {
 		log.Printf(`Failed to auth with login "%s".`, login)
 	}
-	log.Printf(`Available methods: %s.`, strings.Join(response.Methods, ", "))
+	log.Printf(`Available methods: %v.`, response.AllowedMethods)
 }
 
 // ReadLog reads service log.
@@ -88,6 +88,35 @@ func (client *Client) ReadLog() {
 			record.NodeName, record.Text)
 	}
 	log.Println("Log ended.")
+}
+
+// ReadPosts reads posts.
+func (client *Client) ReadPosts() {
+	log.Println("Reading posts...")
+	stream, err := client.client.ReadPosts(client.getCtx(),
+		&accesspoint.PostsReadRequest{}, grpc.Header(&client.header))
+	if err != nil {
+		log.Fatalf(`Failed to read posts: "%s".`, err)
+	}
+	for {
+		post, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatalf(`Failed to read post: "%s".`, err)
+		}
+		fmt.Printf("Post %d (%s):\n", post.Id,
+			time.Unix(0, post.Time).Format(time.StampMicro))
+		if len(post.Messages) == 0 {
+			fmt.Println("\tno messages\t")
+		} else {
+			for _, m := range post.Messages {
+				fmt.Printf("\t%d. (%d bytes)\n", m.Id, m.Size)
+			}
+		}
+	}
+	log.Println("Posts ended.")
 }
 
 func (client *Client) getCtx() context.Context {

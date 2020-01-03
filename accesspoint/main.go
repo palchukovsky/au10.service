@@ -40,6 +40,11 @@ func main() {
 		service.Log().Fatal(`Failed to start users service: "%s".`, err)
 		return
 	}
+	if err := service.GetPosts().InitSubscriptionService(); err != nil {
+		service.Log().Fatal(`Failed to start posts subscription service: "%s".`,
+			err)
+		return
+	}
 	if err := service.Log().InitSubscriptionService(); err != nil {
 		service.Log().Fatal(`Failed to start log subscription service: "%s".`, err)
 		return
