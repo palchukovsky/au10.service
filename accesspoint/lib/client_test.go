@@ -130,15 +130,53 @@ func (test *clientTest) testSubscribeError(
 
 func (test *clientTest) testNumberOfStructFields(
 	s interface{}, numberOfFields int) {
-
 	test.assert.Equal(numberOfFields,
 		reflect.Indirect(reflect.ValueOf(s)).NumField())
 }
 
 func (test *clientTest) testNumberOfProtoStructFields(
 	s interface{}, numberOfFields int) {
-
 	test.testNumberOfStructFields(s, numberOfFields+3)
+}
+
+func (test *clientTest) expectPostConvertion() {}
+
+func (test *clientTest) expectVocalConvertion(
+	secondMessageKind au10.MessageKind) *mock_au10.MockVocal {
+	result := mock_au10.NewMockVocal(test.mock)
+	result.EXPECT().GetID().Return(au10.PostID(987))
+	result.EXPECT().GetTime().Return(time.Unix(0, 567))
+	result.EXPECT().GetLocation().Return(
+		&au10.GeoPoint{Latitude: 123.456, Longitude: 456.789})
+	message1 := mock_au10.NewMockMessage(test.mock)
+	message1.EXPECT().GetID().Return(au10.MessageID(890))
+	message1.EXPECT().GetKind().Return(au10.MessageKindText)
+	message1.EXPECT().GetSize().Return(uint64(564))
+	message2 := mock_au10.NewMockMessage(test.mock)
+	message2.EXPECT().GetID().Return(au10.MessageID(892))
+	message2.EXPECT().GetKind().Return(secondMessageKind)
+	message2.EXPECT().GetSize().Return(uint64(565))
+	result.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
+	return result
+}
+
+func (test *clientTest) validateExpectedVocalConvertion(vocal *proto.Vocal) {
+	test.assert.NotNil(vocal)
+	test.assert.Equal("987", vocal.Post.Id)
+	test.assert.Equal(int64(567), vocal.Post.Time)
+	test.assert.Equal(123.456, vocal.Post.Location.Latitude)
+	test.assert.Equal(456.789, vocal.Post.Location.Longitude)
+	test.testNumberOfProtoStructFields(vocal.Post.Location, 2)
+	test.assert.Equal([]*proto.Message{
+		&proto.Message{
+			Id: "890", Kind: proto.Message_TEXT, Size: uint64(564)},
+		&proto.Message{
+			Id: "892", Kind: proto.Message_TEXT, Size: uint64(565)}},
+		vocal.Post.Messages)
+	test.assert.Equal(1, len(proto.Message_Kind_value))
+	test.testNumberOfProtoStructFields(vocal.Post.Messages[0], 3)
+	test.testNumberOfProtoStructFields(vocal.Post, 4)
+	test.testNumberOfProtoStructFields(vocal, 1)
 }
 
 func (test *clientTest) testSubscription(
@@ -566,45 +604,17 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 			posts.EXPECT().Subscribe().Return(subscription, nil)
 			postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
 			if !isErrData {
-				response.EXPECT().Send(gomock.Any()).Do(func(post *proto.Post) {
-					test.assert.Equal(uint64(987), post.Id)
-					test.assert.Equal(proto.Post_VOCAL, post.Kind)
-					test.assert.Equal(int64(567), post.Time)
-					test.assert.Equal([]*proto.Message{
-						&proto.Message{
-							Id:   uint64(890),
-							Kind: proto.Message_TEXT,
-							Size: uint64(564)},
-						&proto.Message{
-							Id:   uint64(892),
-							Kind: proto.Message_TEXT,
-							Size: uint64(565)}},
-						post.Messages)
-					test.testNumberOfProtoStructFields(post, 4)
-					test.testNumberOfProtoStructFields(post.Messages[0], 3)
-					test.assert.Equal(1, len(proto.Post_Kind_value))
-					test.assert.Equal(1, len(proto.Message_Kind_value))
+				response.EXPECT().Send(gomock.Any()).Do(func(post *proto.PostUpdate) {
+					test.assert.IsType((*proto.PostUpdate_Vocal)(nil), post.Post)
+					test.validateExpectedVocalConvertion(
+						post.Post.(*proto.PostUpdate_Vocal).Vocal)
+					test.testNumberOfProtoStructFields(post, 1)
 				}).Return(nil)
 			}
 			response.EXPECT().Context().Return(ctx)
 			return test.client.ReadPosts(nil, response)
 		},
-		func() {
-			post := mock_au10.NewMockPost(test.mock)
-			post.EXPECT().GetID().Return(au10.PostID(987))
-			post.EXPECT().GetKind().Return(au10.PostKindVocal)
-			post.EXPECT().GetTime().Return(time.Unix(0, 567))
-			message1 := mock_au10.NewMockMessage(test.mock)
-			message1.EXPECT().GetID().Return(au10.MessageID(890))
-			message1.EXPECT().GetKind().Return(au10.MessageKindText)
-			message1.EXPECT().GetSize().Return(uint64(564))
-			message2 := mock_au10.NewMockMessage(test.mock)
-			message2.EXPECT().GetID().Return(au10.MessageID(892))
-			message2.EXPECT().GetKind().Return(au10.MessageKindText)
-			message2.EXPECT().GetSize().Return(uint64(565))
-			post.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
-			postsChan <- post
-		},
+		func() { postsChan <- test.expectVocalConvertion(au10.MessageKindText) },
 		[]struct {
 			errText string
 			run     func()
@@ -612,36 +622,13 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 			struct {
 				errText string
 				run     func()
-			}{
-				errText: "unknown post kind 1",
-				run: func() {
-					post := mock_au10.NewMockPost(test.mock)
-					post.EXPECT().GetID().Return(au10.PostID(987))
-					post.EXPECT().GetKind().Return(au10.PostKind(1))
-					post.EXPECT().GetTime().Return(time.Unix(0, 567))
-					message := mock_au10.NewMockMessage(test.mock)
-					post.EXPECT().GetMessages().Return([]au10.Message{message, message})
-					postsChan <- post
-				}},
+			}{errText: `unknown post type "<nil>"`, run: func() { postsChan <- nil }},
 			struct {
 				errText string
 				run     func()
 			}{
-				errText: "unknown message kind 1",
-				run: func() {
-					post := mock_au10.NewMockPost(test.mock)
-					post.EXPECT().GetID().Return(au10.PostID(987))
-					post.EXPECT().GetKind().Return(au10.PostKindVocal)
-					post.EXPECT().GetTime().Return(time.Unix(0, 567))
-					message1 := mock_au10.NewMockMessage(test.mock)
-					message1.EXPECT().GetID().Return(au10.MessageID(890))
-					message1.EXPECT().GetKind().Return(au10.MessageKindText)
-					message1.EXPECT().GetSize().Return(uint64(564))
-					message2 := mock_au10.NewMockMessage(test.mock)
-					message2.EXPECT().GetKind().Return(au10.MessageKind(1))
-					post.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
-					postsChan <- post
-				}}},
+				errText: "unknown au10 message kind 1",
+				run:     func() { postsChan <- test.expectVocalConvertion(1) }}},
 		func(err error) { errChan <- err },
 		func() {
 			close(postsChan)
@@ -649,7 +636,7 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 		})
 }
 
-func Test_Accesspoint_Client_AddPost_PermissionDenied(t *testing.T) {
+func Test_Accesspoint_Client_AddVocal_PermissionDenied(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
 
@@ -666,117 +653,123 @@ func Test_Accesspoint_Client_AddPost_PermissionDenied(t *testing.T) {
 
 	test.service.EXPECT().GetPosts().Return(posts)
 
-	response, err := test.client.AddPost(nil)
+	emptyRequest := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
+
+	response, err := test.client.AddVocal(emptyRequest)
 	test.assert.Nil(response)
 	test.assert.EqualError(err,
 		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
 }
 
-func Test_Accesspoint_Client_AddPost_InvalidArgument(t *testing.T) {
+func Test_Accesspoint_Client_AddVocal_InvalidArgument(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
-
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	posts := mock_au10.NewMockPosts(test.mock)
-	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
-
 	test.log.EXPECT().Error(
-		"[Test.345.test login] Unknown post kind 1 (RPC error %d).",
-		codes.InvalidArgument)
+		`[Test.345.test login] Failed to convert message kind: "unknown proto message kind 1" (RPC error %d).`,
+		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	posts.EXPECT().GetMembership().Return(postsMembership)
-	request := &proto.PostAddRequest{
-		Kind: proto.Post_Kind(len(proto.Post_Kind_name))}
-	test.testNumberOfProtoStructFields(request, 2)
-	response, err := test.client.AddPost(request)
+	request := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Messages: []*proto.PostAddRequest_MessageDeclaration{
+				&proto.PostAddRequest_MessageDeclaration{Kind: proto.Message_TEXT},
+				&proto.PostAddRequest_MessageDeclaration{Kind: 1}}}}
+	response, err := test.client.AddVocal(request)
 	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
-
-	test.log.EXPECT().Error(
-		"[Test.345.test login] Unknown message kind 1 (RPC error %d).",
-		codes.InvalidArgument)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	posts.EXPECT().GetMembership().Return(postsMembership)
-	request.Kind = proto.Post_VOCAL
-	request.Messages = []*proto.PostAddRequest_MessageDeclaration{
-		&proto.PostAddRequest_MessageDeclaration{Kind: proto.Message_TEXT},
-		&proto.PostAddRequest_MessageDeclaration{Kind: 1}}
-	test.testNumberOfProtoStructFields(request, 2)
-	test.testNumberOfProtoStructFields(request.Messages[0], 2)
-	response, err = test.client.AddPost(request)
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
 
 func (test *clientTest) testAddPostExecution(
-	kind au10.PostKind,
-	requestKind proto.Post_Kind) {
+	expectAdd func(
+		*mock_au10.MockPostsMockRecorder,
+		[]au10.MessageDeclaration,
+		au10.User) *gomock.Call,
+	run func() (*proto.Post, error)) {
+
+}
+
+func Test_Accesspoint_Client_AddVocal_Execution(t *testing.T) {
+	test := createClientTest(t)
+	defer test.close()
 
 	postsMembership := mock_au10.NewMockMembership(test.mock)
 	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
 
-	messages := make([]au10.Message, 2)
-	message := mock_au10.NewMockMessage(test.mock)
-	message.EXPECT().GetID().Return(au10.MessageID(765))
-	messages[0] = message
-	message = mock_au10.NewMockMessage(test.mock)
-	message.EXPECT().GetID().Return(au10.MessageID(543))
-	messages[1] = message
-
-	post := mock_au10.NewMockPost(test.mock)
-	post.EXPECT().GetID().Return(au10.PostID(987))
-	post.EXPECT().GetMessages().Return(messages)
-
 	posts := mock_au10.NewMockPosts(test.mock)
 	posts.EXPECT().GetMembership().Return(postsMembership)
-	posts.EXPECT().AddPost(
-		kind,
+	posts.EXPECT().AddVocal(
 		[]au10.MessageDeclaration{
 			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 123},
 			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 456}},
-		test.user).
-		Return(post, nil)
+		test.user).Return(test.expectVocalConvertion(au10.MessageKindText), nil)
 	test.service.EXPECT().GetPosts().Return(posts)
 
-	request := &proto.PostAddRequest{
-		Kind: requestKind,
-		Messages: []*proto.PostAddRequest_MessageDeclaration{
-			&proto.PostAddRequest_MessageDeclaration{
-				Kind: proto.Message_TEXT,
-				Size: 123},
-			&proto.PostAddRequest_MessageDeclaration{
-				Kind: proto.Message_TEXT,
-				Size: 456}}}
+	request := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Location: &proto.GeoPoint{Latitude: 123.456, Longitude: 456.789},
+			Messages: []*proto.PostAddRequest_MessageDeclaration{
+				&proto.PostAddRequest_MessageDeclaration{
+					Kind: proto.Message_TEXT,
+					Size: 123},
+				&proto.PostAddRequest_MessageDeclaration{
+					Kind: proto.Message_TEXT,
+					Size: 456}}}}
 	test.assert.Equal(1, len(proto.Message_Kind_name))
-	test.testNumberOfProtoStructFields(request, 2)
-	test.testNumberOfProtoStructFields(request.Messages[0], 2)
+	test.testNumberOfProtoStructFields(request, 1)
+	test.testNumberOfProtoStructFields(request.Post, 2)
+	test.testNumberOfProtoStructFields(request.Post.Messages[0], 2)
 
-	response, err := test.client.AddPost(request)
-	test.assert.NotNil(response)
-	test.testNumberOfProtoStructFields(response, 2)
-	test.assert.Equal("987", response.PostID)
-	test.assert.Equal([]string{"765", "543"}, response.MessageIds)
+	response, err := test.client.AddVocal(request)
+	test.validateExpectedVocalConvertion(response)
+	test.testNumberOfProtoStructFields(response, 1)
 	test.assert.NoError(err)
 }
 
-func Test_Accesspoint_Client_AddPost_Execution(t *testing.T) {
+func Test_Accesspoint_Client_AddVocal_ExecutionUnknownResult(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
 
-	test.testAddPostExecution(au10.PostKindVocal, proto.Post_VOCAL)
-	test.assert.Equal(1, len(proto.Post_Kind_name))
+	postsMembership := mock_au10.NewMockMembership(test.mock)
+	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
+
+	posts := mock_au10.NewMockPosts(test.mock)
+
+	request := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Location: &proto.GeoPoint{Latitude: 123.456, Longitude: 456.789},
+			Messages: []*proto.PostAddRequest_MessageDeclaration{
+				&proto.PostAddRequest_MessageDeclaration{
+					Kind: proto.Message_TEXT,
+					Size: 321},
+				&proto.PostAddRequest_MessageDeclaration{
+					Kind: proto.Message_TEXT,
+					Size: 654}}}}
+
+	posts.EXPECT().GetMembership().Return(postsMembership)
+	posts.EXPECT().AddVocal(
+		[]au10.MessageDeclaration{
+			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 321},
+			au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 654}},
+		test.user).Return(test.expectVocalConvertion(1), nil)
+	test.service.EXPECT().GetPosts().Return(posts)
+
+	test.log.EXPECT().Error(
+		`[Test.345.test login] Failed to convert vocal: "unknown au10 message kind 1" (RPC error %d).`,
+		codes.Internal)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
+	response, err := test.client.AddVocal(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
 
-func Test_Accesspoint_Client_AddPost_ExecutionError(t *testing.T) {
+func Test_Accesspoint_Client_AddVocal_ExecutionError(t *testing.T) {
 	test := createClientTest(t)
 	defer test.close()
 
 	test.log.EXPECT().Error(
-		`[Test.345.test login] Failed to post: "test error" (RPC error %d).`,
+		`[Test.345.test login] Failed to add: "test error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 
@@ -785,19 +778,15 @@ func Test_Accesspoint_Client_AddPost_ExecutionError(t *testing.T) {
 
 	posts := mock_au10.NewMockPosts(test.mock)
 	posts.EXPECT().GetMembership().Return(postsMembership)
-	posts.EXPECT().AddPost(
-		au10.PostKindVocal,
-		[]au10.MessageDeclaration{},
-		test.user).
+	posts.EXPECT().AddVocal([]au10.MessageDeclaration{}, test.user).
 		Return(nil, errors.New("test error"))
 	test.service.EXPECT().GetPosts().Return(posts)
 
-	request := &proto.PostAddRequest{
-		Kind:     proto.Post_VOCAL,
-		Messages: []*proto.PostAddRequest_MessageDeclaration{}}
-	test.testNumberOfProtoStructFields(request, 2)
+	request := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
 
-	response, err := test.client.AddPost(request)
+	response, err := test.client.AddVocal(request)
 	test.assert.Nil(response)
 	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
@@ -974,7 +963,7 @@ func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
 	response := test.client.GetAllowedMethods()
 	test.assert.True(response.ReadLog)
 	test.assert.True(response.ReadPosts)
-	test.assert.True(response.AddPost)
+	test.assert.True(response.AddVocal)
 	test.testNumberOfProtoStructFields(response, 3)
 
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
@@ -982,7 +971,7 @@ func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
 	response = test.client.GetAllowedMethods()
 	test.assert.False(response.ReadLog)
 	test.assert.True(response.ReadPosts)
-	test.assert.True(response.AddPost)
+	test.assert.True(response.AddVocal)
 	test.testNumberOfProtoStructFields(response, 3)
 
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
@@ -990,6 +979,6 @@ func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
 	response = test.client.GetAllowedMethods()
 	test.assert.True(response.ReadLog)
 	test.assert.False(response.ReadPosts)
-	test.assert.False(response.AddPost)
+	test.assert.False(response.AddVocal)
 	test.testNumberOfProtoStructFields(response, 3)
 }

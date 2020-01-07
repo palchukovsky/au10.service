@@ -131,7 +131,7 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,au10/group,Rights Membership)
 	$(call gen_mock_aux,au10/user,User,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/users,Users)
-	$(call gen_mock_aux,au10/post,Post,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/post,Post Vocal,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/posts,Posts PostsSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/message,Message,$(CODE_REPO)/au10=au10/member.go)
 

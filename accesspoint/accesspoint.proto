@@ -15,13 +15,13 @@ service Au10 {
   rpc ReadLog(LogReadRequest) returns (stream LogRecord);
  
   // ReadPosts creates posts stream to read posts.
-  rpc ReadPosts(PostsReadRequest) returns (stream Post);
+  rpc ReadPosts(PostsReadRequest) returns (stream PostUpdate);
   // ReadMessage creates a stream to read requested message content.
   rpc ReadMessage(MessageReadRequest) returns (stream MessageChunk);
  
-  // AddPost adds new posts into a network. The post will be unpublished until
-  // all defined messages will be uploaded.
-  rpc AddPost(PostAddRequest) returns (PostAddResponse);
+  // AddVocal adds new post with type "vocal" into a network. The post will
+  // be unpublished until all defined messages will be uploaded.
+  rpc AddVocal(VocalAddRequest) returns (Vocal);
   // WriteMessageChunk writes a part of a message.
   rpc WriteMessageChunk(MessageChunkWriteRequest)
     returns (MessageChunkWriteResponse);
@@ -47,7 +47,7 @@ message AuthResponse {
   message AllowedMethods {
     bool readLog = 1;
     bool readPosts = 2;
-    bool addPost = 3;
+    bool addVocal = 3;
   }
   // Auth success flag.
   bool isSuccess = 1;
@@ -73,21 +73,50 @@ message LogRecord {
 // LogReadRequest describes log records stream reading request.
 message LogReadRequest {}
 
-// Post describes post entity.
+// Geolocation point.
+message GeoPoint {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+// Post describes common part of post.
 message Post {
-  // Kind is a post kind description.
-  enum Kind {
-    VOCAL = 0;
-  }
   // ID.
-  uint64 id = 1;
-  // Kind.
-  Kind kind = 2;
+  string id = 1;
   // Unix time in nano-seconds in UTC.
-  int64 time = 3;
+  int64 time = 2;
+  // Location of post creation.
+  GeoPoint location = 3;
   // Attached message list.
   repeated Message messages = 4;
 }
+// PostAddRequest describes post adding request.
+message PostAddRequest {
+  // MessageDeclaration describes a message which will be attached to a post.
+  message MessageDeclaration {
+    // Message kind.
+    Message.Kind kind = 1;
+    // Message size in bytes.
+    uint64 size = 2;
+  }
+  // Location of creation.
+  GeoPoint location = 1;
+  // Messages declaration.
+  repeated MessageDeclaration messages = 2;
+}
+
+// Vocal describes post entity with type "vocal".
+message Vocal {
+  // General post information.
+  Post post = 1;
+}
+// VocalAddRequest describes vocal adding request.
+message VocalAddRequest {
+  // General post information.
+  PostAddRequest post = 1;
+}
+
+// Message describes post message entity.
 message Message {
   // Kind is a message kind description.
   enum Kind {
@@ -95,7 +124,7 @@ message Message {
     TEXT = 0;
   }
   // ID.
-  uint64 id = 1;
+  string id = 1;
   // Kind.
   Kind kind = 2;
   // Size in bytes.
@@ -103,7 +132,21 @@ message Message {
 }
 
 // PostsReadRequest describes post reading request.
-message PostsReadRequest {}
+message PostsReadRequest {
+  // Vocal describes vocals request parameters.
+  message Vocal {
+    // Geolocation point which has to be included in vocal area.
+    GeoPoint location = 1;
+  }
+  // Vocal request parameters. Optional.
+  Vocal vocal = 1;
+}
+// PostUpdate describes one post creation or update.
+message PostUpdate {
+  oneof post {
+    Vocal vocal = 1;
+  }
+}
 
 // MessageReadRequest describes message reading request.
 message MessageReadRequest {
@@ -116,28 +159,6 @@ message MessageReadRequest {
 message MessageChunk {
   // Chunk data.
   bytes chunk = 1;
-}
-
-// PostAddRequest describes post adding request.
-message PostAddRequest {
-  // MessageDeclaration describes a message which will be attached to a post.
-  message MessageDeclaration {
-    // Message kind.
-    Message.Kind kind = 1;
-    // Message size in bytes.
-    uint64 size = 2;
-  }
-  // Kind.
-  Post.Kind kind = 2;
-  // The messages general info in the post.
-  repeated MessageDeclaration messages = 1;
-}
-// PostAddResponse describes post adding request response.
-message PostAddResponse {
-  // ID of new post.
-  string postID = 1;
-  // The message ID list, in the same order as was posted.
-  repeated string messageIds = 2;
 }
 
 // MessageChunkWriteRequest describes request to write part of message content.

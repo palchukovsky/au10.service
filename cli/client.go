@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	accesspoint "bitbucket.org/au10/service/accesspoint/proto"
+	proto "bitbucket.org/au10/service/accesspoint/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -31,7 +31,7 @@ func DealOrDie(address string) *Client {
 	}
 	log.Printf("Connected.")
 	result.ctx, result.cancel = context.WithCancel(context.Background())
-	result.client = accesspoint.NewAu10Client(result.conn)
+	result.client = proto.NewAu10Client(result.conn)
 	return &result
 }
 
@@ -40,7 +40,7 @@ type Client struct {
 	conn   *grpc.ClientConn
 	ctx    context.Context
 	cancel context.CancelFunc
-	client accesspoint.Au10Client
+	client proto.Au10Client
 	header metadata.MD
 }
 
@@ -52,7 +52,7 @@ func (client *Client) Close() {
 // Auth authes connection.
 func (client *Client) Auth(login string) {
 	response, err := client.client.Auth(client.getCtx(),
-		&accesspoint.AuthRequest{Login: login}, grpc.Header(&client.header))
+		&proto.AuthRequest{Login: login}, grpc.Header(&client.header))
 	if err != nil {
 		log.Fatalf("Failed to auth: %v", err)
 	}
@@ -68,7 +68,7 @@ func (client *Client) Auth(login string) {
 func (client *Client) ReadLog() {
 	log.Println("Reading log...")
 	stream, err := client.client.ReadLog(client.getCtx(),
-		&accesspoint.LogReadRequest{}, grpc.Header(&client.header))
+		&proto.LogReadRequest{}, grpc.Header(&client.header))
 	if err != nil {
 		log.Fatalf(`Failed to read log: "%s".`, err)
 	}
@@ -94,25 +94,36 @@ func (client *Client) ReadLog() {
 func (client *Client) ReadPosts() {
 	log.Println("Reading posts...")
 	stream, err := client.client.ReadPosts(client.getCtx(),
-		&accesspoint.PostsReadRequest{}, grpc.Header(&client.header))
+		&proto.PostsReadRequest{}, grpc.Header(&client.header))
 	if err != nil {
 		log.Fatalf(`Failed to read posts: "%s".`, err)
 	}
 	for {
-		post, err := stream.Recv()
+		message, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			log.Fatalf(`Failed to read post: "%s".`, err)
 		}
-		fmt.Printf("Post %d (%s):\n", post.Id,
+		var typeName string
+		var post *proto.Post
+		switch typedPost := message.Post.(type) {
+		case *proto.PostUpdate_Vocal:
+			typeName = "Vocal"
+			post = typedPost.Vocal.Post
+		}
+		if post == nil {
+			fmt.Printf(`Post has unknown type "%v".`+"\n", message)
+			continue
+		}
+		fmt.Printf("%s %s (%s):\n", typeName, post.Id,
 			time.Unix(0, post.Time).Format(time.StampMicro))
 		if len(post.Messages) == 0 {
-			fmt.Println("\tno messages\t")
+			fmt.Println("\tno messages")
 		} else {
 			for _, m := range post.Messages {
-				fmt.Printf("\t%d. (%d bytes)\n", m.Id, m.Size)
+				fmt.Printf("\t%s (%d bytes, kind %d)\n", m.Id, m.Size, m.Kind)
 			}
 		}
 	}

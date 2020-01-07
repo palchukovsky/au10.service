@@ -244,7 +244,9 @@ type serviceMethodTest struct {
 	accesspoint proto.Au10Server
 }
 
-func createTestServiceMethodTest(test *testing.T) *serviceMethodTest {
+func createTestServiceMethodTest(
+	test *testing.T, request string) *serviceMethodTest {
+
 	result := &serviceMethodTest{
 		mock:   gomock.NewController(test),
 		assert: assert.New(test)}
@@ -257,7 +259,12 @@ func createTestServiceMethodTest(test *testing.T) *serviceMethodTest {
 	result.accesspoint = ap.CreateAu10Server(
 		&proto.Props{},
 		mock_au10.NewMockUser(result.mock),
-		func(uint64, string, au10.User, ap.Service) ap.Client {
+		func(
+			requestID uint64,
+			actualRequest string,
+			user au10.User,
+			service ap.Service) ap.Client {
+			result.assert.Equal(request, actualRequest)
 			return result.client
 		},
 		result.grpc,
@@ -287,7 +294,7 @@ func (test *serviceMethodTest) testClientCreationError(
 }
 
 func Test_Accesspoint_Service_ReadLog(t *testing.T) {
-	test := createTestServiceMethodTest(t)
+	test := createTestServiceMethodTest(t, "ReadLog")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadLogServer(test.mock)
@@ -307,7 +314,7 @@ func Test_Accesspoint_Service_ReadLog(t *testing.T) {
 }
 
 func Test_Accesspoint_Service_ReadPosts(t *testing.T) {
-	test := createTestServiceMethodTest(t)
+	test := createTestServiceMethodTest(t, "ReadPosts")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadPostsServer(test.mock)
@@ -327,7 +334,7 @@ func Test_Accesspoint_Service_ReadPosts(t *testing.T) {
 }
 
 func Test_Accesspoint_Service_ReadMessage(t *testing.T) {
-	test := createTestServiceMethodTest(t)
+	test := createTestServiceMethodTest(t, "ReadMessage")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
@@ -346,26 +353,26 @@ func Test_Accesspoint_Service_ReadMessage(t *testing.T) {
 	test.assert.EqualError(err, "test error")
 }
 
-func Test_Accesspoint_Service_AddPost(t *testing.T) {
-	test := createTestServiceMethodTest(t)
+func Test_Accesspoint_Service_AddVocal(t *testing.T) {
+	test := createTestServiceMethodTest(t, "AddVocal")
 	defer test.close()
 
 	test.testClientCreationError(func() (interface{}, error) {
-		return test.accesspoint.AddPost(test.ctx, nil)
+		return test.accesspoint.AddVocal(test.ctx, nil)
 	})
 
-	request := &proto.PostAddRequest{}
-	expectedResponse := &proto.PostAddResponse{}
+	request := &proto.VocalAddRequest{}
+	expectedResponse := &proto.Vocal{}
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
-	test.client.EXPECT().AddPost(request).
+	test.client.EXPECT().AddVocal(request).
 		Return(expectedResponse, errors.New("test error"))
-	response, err := test.accesspoint.AddPost(test.ctx, request)
+	response, err := test.accesspoint.AddVocal(test.ctx, request)
 	test.assert.True(response == expectedResponse)
 	test.assert.EqualError(err, "test error")
 }
 
 func Test_Accesspoint_Service_MessageChunkWrite(t *testing.T) {
-	test := createTestServiceMethodTest(t)
+	test := createTestServiceMethodTest(t, "WriteMessageChunk")
 	defer test.close()
 
 	test.testClientCreationError(func() (interface{}, error) {

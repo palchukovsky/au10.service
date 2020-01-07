@@ -2,7 +2,6 @@ package accesspoint
 
 import (
 	fmt "fmt"
-	"strconv"
 	"strings"
 
 	proto "bitbucket.org/au10/service/accesspoint/proto"
@@ -25,7 +24,7 @@ type Client interface {
 	ReadLog(*proto.LogReadRequest, proto.Au10_ReadLogServer) error
 	ReadPosts(*proto.PostsReadRequest, proto.Au10_ReadPostsServer) error
 	ReadMessage(*proto.MessageReadRequest, proto.Au10_ReadMessageServer) error
-	AddPost(request *proto.PostAddRequest) (*proto.PostAddResponse, error)
+	AddVocal(request *proto.VocalAddRequest) (*proto.Vocal, error)
 	WriteMessageChunk(*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error)
 }
 
@@ -87,7 +86,6 @@ var starusByCode = map[codes.Code]string{
 
 func (client *client) CreateError(
 	code codes.Code, descFormat string, args ...interface{}) error {
-
 	desc := fmt.Sprintf(descFormat, args...)
 	if len(desc) > 0 {
 		client.LogError(strings.ToUpper(desc[:1])+desc[1:]+" (RPC error %d).", code)
@@ -125,7 +123,6 @@ func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
 
 func (client *client) ReadLog(
 	request *proto.LogReadRequest, stream proto.Au10_ReadLogServer) error {
-
 	log := client.service.GetAu10().Log()
 	if err := client.checkRights(log, "log"); err != nil {
 		return err
@@ -135,7 +132,6 @@ func (client *client) ReadLog(
 
 func (client *client) ReadPosts(
 	request *proto.PostsReadRequest, stream proto.Au10_ReadPostsServer) error {
-
 	posts := client.service.GetAu10().GetPosts()
 	if err := client.checkRights(posts, "posts"); err != nil {
 		return err
@@ -146,7 +142,6 @@ func (client *client) ReadPosts(
 func (client *client) ReadMessage(
 	request *proto.MessageReadRequest,
 	stream proto.Au10_ReadMessageServer) error {
-
 	message, err := client.getMessage(request.PostID, request.MessageID)
 	if err != nil {
 		return err
@@ -169,30 +164,20 @@ func (client *client) ReadMessage(
 	return nil
 }
 
-func (client *client) convertRequestPostKindToKind(
-	request proto.Post_Kind) (au10.PostKind, error) {
+func (client *client) AddVocal(
+	request *proto.VocalAddRequest) (*proto.Vocal, error) {
 
-	switch request {
-	case proto.Post_VOCAL:
-		return au10.PostKindVocal, nil
+	messagesRequest := make([]au10.MessageDeclaration, len(request.Post.Messages))
+	for i, m := range request.Post.Messages {
+		var err error
+		messagesRequest[i] = au10.MessageDeclaration{
+			Kind: convertMessageKindFromProto(m.Kind, &err),
+			Size: m.Size}
+		if err != nil {
+			return nil, client.CreateError(codes.Internal,
+				`failed to convert message kind: "%s"`, err)
+		}
 	}
-	return 0, client.CreateError(codes.InvalidArgument,
-		"unknown post kind %d", request)
-}
-
-func (client *client) convertRequestMessageKindToKind(
-	request proto.Message_Kind) (au10.MessageKind, error) {
-
-	switch request {
-	case proto.Message_TEXT:
-		return au10.MessageKindText, nil
-	}
-	return 0, client.CreateError(codes.InvalidArgument,
-		"unknown message kind %d", request)
-}
-
-func (client *client) AddPost(
-	request *proto.PostAddRequest) (*proto.PostAddResponse, error) {
 
 	posts := client.service.GetAu10().GetPosts()
 	err := client.checkRights(posts, "posts")
@@ -200,39 +185,22 @@ func (client *client) AddPost(
 		return nil, err
 	}
 
-	var kind au10.PostKind
-	kind, err = client.convertRequestPostKindToKind(request.Kind)
+	var result au10.Vocal
+	result, err = posts.AddVocal(messagesRequest, client.user)
 	if err != nil {
-		return nil, err
+		return nil, client.CreateError(codes.Internal, `failed to add: "%s"`, err)
 	}
 
-	messagesRequest := make([]au10.MessageDeclaration, len(request.Messages))
-	for i, m := range request.Messages {
-		kind, err := client.convertRequestMessageKindToKind(m.Kind)
-		if err != nil {
-			return nil, err
-		}
-		messagesRequest[i] = au10.MessageDeclaration{Kind: kind, Size: m.Size}
-	}
-
-	var post au10.Post
-	post, err = posts.AddPost(kind, messagesRequest, client.user)
+	response := convertVocalToProto(result, &err)
 	if err != nil {
-		return nil, client.CreateError(codes.Internal, `failed to post: "%s"`, err)
-	}
-	messages := post.GetMessages()
-	response := &proto.PostAddResponse{
-		PostID:     strconv.FormatUint(uint64(post.GetID()), 10),
-		MessageIds: make([]string, len(messages))}
-	for i, m := range messages {
-		response.MessageIds[i] = strconv.FormatUint(uint64(m.GetID()), 10)
+		return nil, client.CreateError(codes.Internal,
+			`failed to convert vocal: "%s"`, err)
 	}
 	return response, nil
 }
 
 func (client *client) WriteMessageChunk(
 	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
-
 	message, err := client.getMessage(request.PostID, request.MessageID)
 	if err != nil {
 		return nil, err
@@ -248,23 +216,23 @@ func (client *client) WriteMessageChunk(
 func (client *client) getMessage(
 	requestPostID, requestMessageID string) (au10.Message, error) {
 
-	posts := client.service.GetAu10().GetPosts()
-	if err := client.checkRights(posts, "posts"); err != nil {
-		return nil, err
-	}
-
-	intPostID, err := strconv.ParseUint(requestPostID, 10, 64)
+	var err error
+	intPostID := convertIDFromProto(requestPostID, &err)
 	if err != nil {
 		return nil, client.CreateError(codes.InvalidArgument,
 			`failed to parse post ID "%s"/"%s": "%s"`,
 			requestPostID, requestMessageID, err)
 	}
-	var intMessageID uint64
-	intMessageID, err = strconv.ParseUint(requestMessageID, 10, 64)
+	intMessageID := convertIDFromProto(requestMessageID, &err)
 	if err != nil {
 		return nil, client.CreateError(codes.InvalidArgument,
 			`failed to parse message ID "%s"/"%s": "%s"`,
 			requestPostID, requestMessageID, err)
+	}
+
+	posts := client.service.GetAu10().GetPosts()
+	if err := client.checkRights(posts, "posts"); err != nil {
+		return nil, err
 	}
 
 	var post au10.Post
@@ -302,7 +270,6 @@ func (client *client) checkRights(
 	entity au10.Member,
 	format string,
 	args ...interface{}) error {
-
 	if !entity.GetMembership().IsAllowed(client.user.GetRights()) {
 		return client.CreateError(codes.PermissionDenied,
 			"Permission denied for "+format, args...)
@@ -317,5 +284,5 @@ func (client *client) GetAllowedMethods() *proto.AuthResponse_AllowedMethods {
 	return &proto.AuthResponse_AllowedMethods{
 		ReadLog:   au10.Log().GetMembership().IsAllowed(rights),
 		ReadPosts: arePostsAvailable,
-		AddPost:   arePostsAvailable}
+		AddVocal:  arePostsAvailable}
 }

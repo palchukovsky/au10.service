@@ -20,8 +20,8 @@ type Posts interface {
 	// GetPost returns post by ID.
 	GetPost(PostID) (Post, error)
 
-	// AddPost adds new post, but doesn't publishes it.
-	AddPost(PostKind, []MessageDeclaration, User) (Post, error)
+	// AddVocal adds new vocal, but doesn't publishes it.
+	AddVocal([]MessageDeclaration, User) (Vocal, error)
 
 	// InitSubscriptionService initiates subscriber to read posts in the feature.
 	InitSubscriptionService() error
@@ -56,12 +56,10 @@ func (posts *posts) GetPost(id PostID) (Post, error) {
 	return nil, fmt.Errorf("post with ID %d is nonexistent", id)
 }
 
-func (*posts) AddPost(
-	kind PostKind,
-	messages []MessageDeclaration,
-	user User) (Post, error) {
+func (*posts) AddVocal(
+	messages []MessageDeclaration, user User) (Vocal, error) {
 
-	return nil, nil
+	return nil, errors.New("not implemented")
 }
 
 func (posts *posts) InitSubscriptionService() error {

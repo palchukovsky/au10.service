@@ -83,7 +83,6 @@ func (service *service) GetGlobalProps() *proto.Props { return service.props }
 
 func (service *service) GetProps(
 	context.Context, *proto.PropsRequest) (*proto.Props, error) {
-
 	return service.props, nil
 }
 
@@ -117,7 +116,6 @@ func (service *service) Auth(
 
 func (service *service) ReadLog(
 	request *proto.LogReadRequest, subscription proto.Au10_ReadLogServer) error {
-
 	client, err := service.createRequestClient(subscription.Context(), "ReadLog")
 	if err != nil {
 		return err
@@ -128,7 +126,6 @@ func (service *service) ReadLog(
 func (service *service) ReadPosts(
 	request *proto.PostsReadRequest,
 	subscription proto.Au10_ReadPostsServer) error {
-
 	client, err := service.createRequestClient(
 		subscription.Context(), "ReadPosts")
 	if err != nil {
@@ -140,7 +137,6 @@ func (service *service) ReadPosts(
 func (service *service) ReadMessage(
 	request *proto.MessageReadRequest,
 	subscription proto.Au10_ReadMessageServer) error {
-
 	client, err := service.createRequestClient(
 		subscription.Context(), "ReadMessage")
 	if err != nil {
@@ -149,21 +145,18 @@ func (service *service) ReadMessage(
 	return client.ReadMessage(request, subscription)
 }
 
-func (service *service) AddPost(
-	ctx context.Context,
-	request *proto.PostAddRequest) (*proto.PostAddResponse, error) {
-
-	client, err := service.createRequestClient(ctx, "AddPost")
+func (service *service) AddVocal(
+	ctx context.Context, request *proto.VocalAddRequest) (*proto.Vocal, error) {
+	client, err := service.createRequestClient(ctx, "AddVocal")
 	if err != nil {
 		return nil, err
 	}
-	return client.AddPost(request)
+	return client.AddVocal(request)
 }
 
 func (service *service) WriteMessageChunk(
 	ctx context.Context,
 	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
-
 	client, err := service.createRequestClient(ctx, "WriteMessageChunk")
 	if err != nil {
 		return nil, err
@@ -173,7 +166,6 @@ func (service *service) WriteMessageChunk(
 
 func (service *service) createRequestClient(
 	ctx context.Context, request string) (Client, error) {
-
 	user := service.defaultUser
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if token, ok := md["auth"]; ok && len(token) == 1 {
