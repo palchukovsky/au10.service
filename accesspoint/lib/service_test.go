@@ -18,247 +18,61 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func Test_Accesspoint_Service_Methods(test *testing.T) {
-	mock := gomock.NewController(test)
-	defer mock.Finish()
-	assert := assert.New(test)
+type serviceTest struct {
+	mock   *gomock.Controller
+	assert *assert.Assertions
 
-	grpc := mock_ap.NewMockGrpc(mock)
-	defaultUser := mock_au10.NewMockUser(mock)
-	createClient := func(uint64, string, au10.User, ap.Service) ap.Client {
-		assert.True(false)
-		return nil
-	}
-	props := &proto.Props{}
-	service := mock_au10.NewMockService(mock)
-	accesspoint := ap.CreateAu10Server(
-		props, defaultUser, createClient, grpc, service)
+	props     *proto.Props
+	grpc      *mock_ap.MockGrpc
+	client    *mock_ap.MockClient
+	posts     *mock_au10.MockPosts
+	publisher *mock_au10.MockPublisher
+	users     *mock_au10.MockUsers
+	user      *mock_au10.MockUser
+	ctx       *mock_context.MockContext
+	log       *mock_au10.MockLog
+	logReader *mock_au10.MockLogReader
 
-	ctx := mock_context.NewMockContext(mock)
-	response, err := accesspoint.GetProps(ctx, nil)
-	assert.True(response == props)
-	assert.NoError(err)
-
-	response = accesspoint.(ap.Service).GetGlobalProps()
-	assert.True(response == props)
-	assert.NoError(err)
-
-	assert.True(accesspoint.(ap.Service).GetAu10() == service)
-
-	logSubscriptionInfo := accesspoint.(ap.Service).GetLogSubscriptionInfo()
-	assert.Equal(uint32(0), logSubscriptionInfo.NumberOfSubscribers)
-	assert.Equal(1, reflect.Indirect(
-		reflect.ValueOf(logSubscriptionInfo)).NumField())
-
-	postsSubscriptionInfo := accesspoint.(ap.Service).GetPostsSubscriptionInfo()
-	assert.Equal(uint32(0), postsSubscriptionInfo.NumberOfSubscribers)
-	assert.Equal(1, reflect.Indirect(
-		reflect.ValueOf(postsSubscriptionInfo)).NumField())
-
-	assert.Equal(uint32(1), accesspoint.(ap.Service).RegisterSubscriber())
-	assert.Equal(uint32(2), accesspoint.(ap.Service).RegisterSubscriber())
-	assert.Equal(uint32(1), accesspoint.(ap.Service).UnregisterSubscriber())
-	assert.Equal(uint32(0), accesspoint.(ap.Service).UnregisterSubscriber())
-	assert.Equal(uint32(1), accesspoint.(ap.Service).RegisterSubscriber())
+	service proto.Au10Server
 }
 
-func Test_Accesspoint_Service_Auth(test *testing.T) {
-	mock := gomock.NewController(test)
-	defer mock.Finish()
-	assert := assert.New(test)
-
-	grpc := mock_ap.NewMockGrpc(mock)
-	client := mock_ap.NewMockClient(mock)
-	nextRequestID := uint64(1)
-	defaultUser := mock_au10.NewMockUser(mock)
-	expectedUser := &defaultUser
-	createClient := func(
-		requestID uint64,
-		request string,
-		user au10.User,
-		service ap.Service) ap.Client {
-
-		assert.Equal(nextRequestID, requestID)
-		assert.Equal("Auth", request)
-		nextRequestID++
-		assert.True(user == *expectedUser)
-		assert.NotNil(service)
-		return client
-	}
-	service := mock_au10.NewMockService(mock)
-	accesspoint := ap.CreateAu10Server(
-		&proto.Props{}, defaultUser, createClient, grpc, service)
-	ctx := mock_context.NewMockContext(mock)
-
-	// No metadata
-	authRequest := &proto.AuthRequest{}
-	authExpectedResponse := "test auth response"
-	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	allowedMethods := &proto.AuthResponse_AllowedMethods{}
-	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
-	grpc.EXPECT().
-		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
-		Return(nil)
-	ctx.EXPECT().Value(gomock.Any()).Return(nil)
-	response, err := accesspoint.Auth(ctx, authRequest)
-	assert.NotNil(response)
-	responseReflection := reflect.Indirect(reflect.ValueOf(response))
-	assert.Equal(5, responseReflection.NumField())
-	assert.True(response.IsSuccess)
-	assert.True(allowedMethods == response.AllowedMethods)
-	assert.NoError(err)
-
-	// Metadata without auth
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
-	grpc.EXPECT().
-		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
-		Return(nil)
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"wrong": []string{authExpectedResponse}})
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.NotNil(response)
-	assert.Equal(5, responseReflection.NumField())
-	assert.True(response.IsSuccess)
-	assert.True(allowedMethods == response.AllowedMethods)
-	assert.NoError(err)
-
-	// Metadata with auth, but error at session finding
-	authExpectedResponse += "!"
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	users := mock_au10.NewMockUsers(mock)
-	users.EXPECT().FindSession(authExpectedResponse).
-		Return(nil, errors.New("session finding error"))
-	service.EXPECT().GetUsers().Return(users)
-	log := mock_au10.NewMockLog(mock)
-	log.EXPECT().Error(`Failed to find user session by token: "%s".`,
-		errors.New("session finding error"))
-	service.EXPECT().Log().Return(log)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.Nil(response)
-	assert.EqualError(err,
-		"rpc error: code = Internal desc = server internal error")
-
-	// Metadata with auth, but filed to find session
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
-	grpc.EXPECT().
-		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
-		Return(nil)
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
-	service.EXPECT().GetUsers().Return(users)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.NotNil(response)
-	assert.Equal(5, responseReflection.NumField())
-	assert.True(response.IsSuccess)
-	assert.True(allowedMethods == response.AllowedMethods)
-	assert.NoError(err)
-
-	// Already authed
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
-	grpc.EXPECT().
-		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
-		Return(nil)
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	realUser := mock_au10.NewMockUser(mock)
-	expectedUser = &realUser
-	users.EXPECT().FindSession(authExpectedResponse).Return(realUser, nil)
-	service.EXPECT().GetUsers().Return(users)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.NotNil(response)
-	assert.Equal(5, responseReflection.NumField())
-	assert.True(response.IsSuccess)
-	assert.True(allowedMethods == response.AllowedMethods)
-	assert.NoError(err)
-
-	// Auth error
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).
-		Return(&authExpectedResponse, errors.New("auth test error"))
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	expectedUser = &defaultUser
-	users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
-	service.EXPECT().GetUsers().Return(users)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.Nil(response)
-	assert.EqualError(err, "auth test error")
-
-	// Wrong creds
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).Return(nil, nil)
-	client.EXPECT().GetAllowedMethods().Return(allowedMethods)
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
-	service.EXPECT().GetUsers().Return(users)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.NotNil(response)
-	assert.Equal(5, responseReflection.NumField())
-	assert.False(response.IsSuccess)
-	assert.True(allowedMethods == response.AllowedMethods)
-	assert.NoError(err)
-
-	// Failed to store auth token
-	authExpectedResponse += "!"
-	client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
-	client.EXPECT().CreateError(codes.Internal,
-		`failed to set auth-metadata: "%s"`, errors.New("test metadata error")).
-		Return(errors.New("test auth error"))
-	grpc.EXPECT().
-		SendHeader(ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
-		Return(errors.New("test metadata error"))
-	ctx.EXPECT().
-		Value(gomock.Any()).
-		Return(metadata.MD{"auth": []string{authExpectedResponse}})
-	users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
-	service.EXPECT().GetUsers().Return(users)
-	response, err = accesspoint.Auth(ctx, authRequest)
-	assert.Nil(response)
-	assert.EqualError(err, "test auth error")
+func newServiceTest(
+	test *testing.T,
+	newClient func(
+		uint64,
+		string,
+		au10.User,
+		ap.Service) ap.Client) *serviceTest {
+	result := newServiceTestObj(test)
+	result.init(newClient)
+	return result
 }
 
-type serviceMethodTest struct {
-	mock        *gomock.Controller
-	assert      *assert.Assertions
-	service     *mock_au10.MockService
-	grpc        *mock_ap.MockGrpc
-	client      *mock_ap.MockClient
-	users       *mock_au10.MockUsers
-	ctx         *mock_context.MockContext
-	log         *mock_au10.MockLog
-	accesspoint proto.Au10Server
-}
-
-func createTestServiceMethodTest(
-	test *testing.T, request string) *serviceMethodTest {
-
-	result := &serviceMethodTest{
+func newServiceTestObj(test *testing.T) *serviceTest {
+	result := &serviceTest{
 		mock:   gomock.NewController(test),
-		assert: assert.New(test)}
+		assert: assert.New(test),
+		props:  &proto.Props{}}
 	result.grpc = mock_ap.NewMockGrpc(result.mock)
 	result.client = mock_ap.NewMockClient(result.mock)
-	result.service = mock_au10.NewMockService(result.mock)
+	result.posts = mock_au10.NewMockPosts(result.mock)
+	result.publisher = mock_au10.NewMockPublisher(result.mock)
 	result.users = mock_au10.NewMockUsers(result.mock)
+	result.user = mock_au10.NewMockUser(result.mock)
 	result.ctx = mock_context.NewMockContext(result.mock)
 	result.log = mock_au10.NewMockLog(result.mock)
-	result.accesspoint = ap.CreateAu10Server(
-		&proto.Props{},
-		mock_au10.NewMockUser(result.mock),
+	return result
+}
+
+func (test *serviceTest) init(
+	newClient func(uint64, string, au10.User, ap.Service) ap.Client) {
+	test.service = ap.NewAu10Server(test.props, test.log, test.logReader,
+		test.posts, test.publisher, test.users, test.user, newClient, test.grpc)
+}
+
+func newServiceMethodTest(test *testing.T, request string) *serviceTest {
+	result := newServiceTestObj(test)
+	result.init(
 		func(
 			requestID uint64,
 			actualRequest string,
@@ -266,25 +80,209 @@ func createTestServiceMethodTest(
 			service ap.Service) ap.Client {
 			result.assert.Equal(request, actualRequest)
 			return result.client
-		},
-		result.grpc,
-		result.service)
+		})
 	return result
 }
 
-func (test *serviceMethodTest) close() {
+func (test *serviceTest) close() {
 	test.mock.Finish()
 }
 
-func (test *serviceMethodTest) testClientCreationError(
-	runTest func() (interface{}, error)) {
+func Test_Accesspoint_Service_Methods(t *testing.T) {
+	test := newServiceTestObj(t)
+	defer test.close()
+	test.init(func(uint64, string, au10.User, ap.Service) ap.Client {
+		test.assert.True(false)
+		return nil
+	})
 
-	test.users.EXPECT().FindSession(gomock.Any()).
+	props, err := test.service.GetProps(test.ctx, nil)
+	test.assert.True(props == test.props)
+	test.assert.NoError(err)
+
+	props = test.service.(ap.Service).GetGlobalProps()
+	test.assert.True(props == test.props)
+	test.assert.NoError(err)
+
+	logSubscriptionInfo := test.service.(ap.Service).GetLogSubscriptionInfo()
+	test.assert.Equal(uint32(0), logSubscriptionInfo.NumberOfSubscribers)
+	test.assert.Equal(1, reflect.Indirect(
+		reflect.ValueOf(logSubscriptionInfo)).NumField())
+
+	postsSubscriptionInfo := test.service.(ap.Service).GetPostsSubscriptionInfo()
+	test.assert.Equal(uint32(0), postsSubscriptionInfo.NumberOfSubscribers)
+	test.assert.Equal(1, reflect.Indirect(
+		reflect.ValueOf(postsSubscriptionInfo)).NumField())
+
+	test.assert.True(test.service.(ap.Service).Log() == test.log)
+	test.assert.True(test.service.(ap.Service).GetLogReader() == test.logReader)
+	test.assert.True(test.service.(ap.Service).GetPosts() == test.posts)
+	test.assert.True(test.service.(ap.Service).GetPublisher() == test.publisher)
+	test.assert.True(test.service.(ap.Service).GetUsers() == test.users)
+	test.assert.Equal(uint32(1), test.service.(ap.Service).RegisterSubscriber())
+	test.assert.Equal(uint32(2), test.service.(ap.Service).RegisterSubscriber())
+	test.assert.Equal(uint32(1), test.service.(ap.Service).UnregisterSubscriber())
+	test.assert.Equal(uint32(0), test.service.(ap.Service).UnregisterSubscriber())
+	test.assert.Equal(uint32(1), test.service.(ap.Service).RegisterSubscriber())
+}
+
+func Test_Accesspoint_Service_Auth(t *testing.T) {
+	test := newServiceTestObj(t)
+	defer test.close()
+	nextRequestID := uint64(1)
+	expectedUser := &test.user
+	test.init(func(
+		requestID uint64,
+		request string,
+		user au10.User,
+		service ap.Service) ap.Client {
+		test.assert.Equal(nextRequestID, requestID)
+		test.assert.Equal("Auth", request)
+		nextRequestID++
+		test.assert.True(user == *expectedUser)
+		test.assert.NotNil(service)
+		return test.client
+	})
+
+	// No metadata
+	authRequest := &proto.AuthRequest{}
+	authExpectedResponse := "test auth response"
+	test.client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
+	allowedMethods := &proto.AuthResponse_AllowedMethods{}
+	test.client.EXPECT().GetAllowedMethods().Return(allowedMethods)
+	test.grpc.EXPECT().
+		SendHeader(test.ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
+		Return(nil)
+	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
+	response, err := test.service.Auth(test.ctx, authRequest)
+	test.assert.NotNil(response)
+	responseReflection := reflect.Indirect(reflect.ValueOf(response))
+	test.assert.Equal(5, responseReflection.NumField())
+	test.assert.True(response.IsSuccess)
+	test.assert.True(allowedMethods == response.AllowedMethods)
+	test.assert.NoError(err)
+
+	// Metadata without auth
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
+	test.client.EXPECT().GetAllowedMethods().Return(allowedMethods)
+	test.grpc.EXPECT().
+		SendHeader(test.ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
+		Return(nil)
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"wrong": []string{authExpectedResponse}})
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.NotNil(response)
+	test.assert.Equal(5, responseReflection.NumField())
+	test.assert.True(response.IsSuccess)
+	test.assert.True(allowedMethods == response.AllowedMethods)
+	test.assert.NoError(err)
+
+	// Metadata with auth, but error at session finding
+	authExpectedResponse += "!"
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	test.users.EXPECT().FindSession(authExpectedResponse).
 		Return(nil, errors.New("session finding error"))
-	test.service.EXPECT().GetUsers().Return(test.users)
 	test.log.EXPECT().Error(`Failed to find user session by token: "%s".`,
 		errors.New("session finding error"))
-	test.service.EXPECT().Log().Return(test.log)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = Internal desc = server internal error")
+
+	// Metadata with auth, but filed to find session
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
+	test.client.EXPECT().GetAllowedMethods().Return(allowedMethods)
+	test.grpc.EXPECT().
+		SendHeader(test.ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
+		Return(nil)
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	test.users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.NotNil(response)
+	test.assert.Equal(5, responseReflection.NumField())
+	test.assert.True(response.IsSuccess)
+	test.assert.True(allowedMethods == response.AllowedMethods)
+	test.assert.NoError(err)
+
+	// Already authed
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
+	test.client.EXPECT().GetAllowedMethods().Return(allowedMethods)
+	test.grpc.EXPECT().
+		SendHeader(test.ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
+		Return(nil)
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	realUser := mock_au10.NewMockUser(test.mock)
+	expectedUser = &realUser
+	test.users.EXPECT().FindSession(authExpectedResponse).Return(realUser, nil)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.NotNil(response)
+	test.assert.Equal(5, responseReflection.NumField())
+	test.assert.True(response.IsSuccess)
+	test.assert.True(allowedMethods == response.AllowedMethods)
+	test.assert.NoError(err)
+
+	// Auth error
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).
+		Return(&authExpectedResponse, errors.New("auth test error"))
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	expectedUser = &test.user
+	test.users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "auth test error")
+
+	// Wrong creds
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).Return(nil, nil)
+	test.client.EXPECT().GetAllowedMethods().Return(allowedMethods)
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	test.users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.NotNil(response)
+	test.assert.Equal(5, responseReflection.NumField())
+	test.assert.False(response.IsSuccess)
+	test.assert.True(allowedMethods == response.AllowedMethods)
+	test.assert.NoError(err)
+
+	// Failed to store auth token
+	authExpectedResponse += "!"
+	test.client.EXPECT().Auth(authRequest).Return(&authExpectedResponse, nil)
+	test.client.EXPECT().RegisterError(codes.Internal,
+		`failed to set auth-metadata: "%s"`, errors.New("test metadata error")).
+		Return(errors.New("test auth error"))
+	test.grpc.EXPECT().
+		SendHeader(test.ctx, metadata.MD{"auth": []string{authExpectedResponse}}).
+		Return(errors.New("test metadata error"))
+	test.ctx.EXPECT().
+		Value(gomock.Any()).
+		Return(metadata.MD{"auth": []string{authExpectedResponse}})
+	test.users.EXPECT().FindSession(authExpectedResponse).Return(nil, nil)
+	response, err = test.service.Auth(test.ctx, authRequest)
+	test.assert.Nil(response)
+	test.assert.EqualError(err, "test auth error")
+}
+
+func (test *serviceTest) testClientCreationError(
+	runTest func() (interface{}, error)) {
+	test.users.EXPECT().FindSession(gomock.Any()).
+		Return(nil, errors.New("session finding error"))
+	test.log.EXPECT().Error(`Failed to find user session by token: "%s".`,
+		errors.New("session finding error"))
 	test.ctx.EXPECT().Value(gomock.Any()).
 		Return(metadata.MD{"auth": []string{""}})
 	response, err := runTest()
@@ -294,14 +292,14 @@ func (test *serviceMethodTest) testClientCreationError(
 }
 
 func Test_Accesspoint_Service_ReadLog(t *testing.T) {
-	test := createTestServiceMethodTest(t, "ReadLog")
+	test := newServiceMethodTest(t, "ReadLog")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadLogServer(test.mock)
 
 	test.testClientCreationError(func() (interface{}, error) {
 		subscription.EXPECT().Context().Return(test.ctx)
-		return nil, test.accesspoint.ReadLog(nil, subscription)
+		return nil, test.service.ReadLog(nil, subscription)
 	})
 
 	request := &proto.LogReadRequest{}
@@ -309,19 +307,19 @@ func Test_Accesspoint_Service_ReadLog(t *testing.T) {
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
 	test.client.EXPECT().ReadLog(request, subscription).
 		Return(errors.New("test error"))
-	err := test.accesspoint.ReadLog(request, subscription)
+	err := test.service.ReadLog(request, subscription)
 	test.assert.EqualError(err, "test error")
 }
 
 func Test_Accesspoint_Service_ReadPosts(t *testing.T) {
-	test := createTestServiceMethodTest(t, "ReadPosts")
+	test := newServiceMethodTest(t, "ReadPosts")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadPostsServer(test.mock)
 
 	test.testClientCreationError(func() (interface{}, error) {
 		subscription.EXPECT().Context().Return(test.ctx)
-		return nil, test.accesspoint.ReadPosts(nil, subscription)
+		return nil, test.service.ReadPosts(nil, subscription)
 	})
 
 	request := &proto.PostsReadRequest{}
@@ -329,19 +327,19 @@ func Test_Accesspoint_Service_ReadPosts(t *testing.T) {
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
 	test.client.EXPECT().ReadPosts(request, subscription).
 		Return(errors.New("test error"))
-	err := test.accesspoint.ReadPosts(request, subscription)
+	err := test.service.ReadPosts(request, subscription)
 	test.assert.EqualError(err, "test error")
 }
 
 func Test_Accesspoint_Service_ReadMessage(t *testing.T) {
-	test := createTestServiceMethodTest(t, "ReadMessage")
+	test := newServiceMethodTest(t, "ReadMessage")
 	defer test.close()
 
 	subscription := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
 
 	test.testClientCreationError(func() (interface{}, error) {
 		subscription.EXPECT().Context().Return(test.ctx)
-		return nil, test.accesspoint.ReadMessage(nil, subscription)
+		return nil, test.service.ReadMessage(nil, subscription)
 	})
 
 	request := &proto.MessageReadRequest{}
@@ -349,16 +347,16 @@ func Test_Accesspoint_Service_ReadMessage(t *testing.T) {
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
 	test.client.EXPECT().ReadMessage(request, subscription).
 		Return(errors.New("test error"))
-	err := test.accesspoint.ReadMessage(request, subscription)
+	err := test.service.ReadMessage(request, subscription)
 	test.assert.EqualError(err, "test error")
 }
 
 func Test_Accesspoint_Service_AddVocal(t *testing.T) {
-	test := createTestServiceMethodTest(t, "AddVocal")
+	test := newServiceMethodTest(t, "AddVocal")
 	defer test.close()
 
 	test.testClientCreationError(func() (interface{}, error) {
-		return test.accesspoint.AddVocal(test.ctx, nil)
+		return test.service.AddVocal(test.ctx, nil)
 	})
 
 	request := &proto.VocalAddRequest{}
@@ -366,17 +364,17 @@ func Test_Accesspoint_Service_AddVocal(t *testing.T) {
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
 	test.client.EXPECT().AddVocal(request).
 		Return(expectedResponse, errors.New("test error"))
-	response, err := test.accesspoint.AddVocal(test.ctx, request)
+	response, err := test.service.AddVocal(test.ctx, request)
 	test.assert.True(response == expectedResponse)
 	test.assert.EqualError(err, "test error")
 }
 
 func Test_Accesspoint_Service_MessageChunkWrite(t *testing.T) {
-	test := createTestServiceMethodTest(t, "WriteMessageChunk")
+	test := newServiceMethodTest(t, "WriteMessageChunk")
 	defer test.close()
 
 	test.testClientCreationError(func() (interface{}, error) {
-		return test.accesspoint.WriteMessageChunk(test.ctx, nil)
+		return test.service.WriteMessageChunk(test.ctx, nil)
 	})
 
 	request := &proto.MessageChunkWriteRequest{}
@@ -384,7 +382,7 @@ func Test_Accesspoint_Service_MessageChunkWrite(t *testing.T) {
 	test.ctx.EXPECT().Value(gomock.Any()).Return(nil)
 	test.client.EXPECT().WriteMessageChunk(request).
 		Return(expectedResponse, errors.New("test error"))
-	response, err := test.accesspoint.WriteMessageChunk(test.ctx, request)
+	response, err := test.service.WriteMessageChunk(test.ctx, request)
 	test.assert.True(response == expectedResponse)
 	test.assert.EqualError(err, "test error")
 }

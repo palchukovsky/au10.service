@@ -10,7 +10,7 @@ type User interface {
 	GetRights() []Rights
 }
 
-func (*factory) CreateUser(
+func (*factory) NewUser(
 	login string, membership Membership, rights []Rights) (User, error) {
 
 	r := &user{

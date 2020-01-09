@@ -13,7 +13,7 @@ type subscription struct {
 	errChan chan error
 }
 
-func createSubscription() subscription {
+func newSubscription() subscription {
 	return subscription{errChan: make(chan error)}
 }
 

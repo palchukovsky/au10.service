@@ -26,11 +26,11 @@ func Test_Au10_StreamWriter_Message(test *testing.T) {
 	factory := mock_au10.NewMockFactory(ctrl)
 
 	service := mock_au10.NewMockService(ctrl)
-	factory.EXPECT().CreateSaramaProducer(service).Return(producer, nil)
+	factory.EXPECT().NewSaramaProducer(service).Return(producer, nil)
 	service.EXPECT().GetFactory().Return(factory)
 	service.EXPECT().GetNodeType().MinTimes(1).Return("test node type")
 
-	stream, err := au10.CreateFactory().CreateStreamWriter("test topic 2", service)
+	stream, err := au10.NewFactory().NewStreamWriter("test topic 2", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 
@@ -68,7 +68,7 @@ func Test_Au10_StreamWriter_Message(test *testing.T) {
 	stream.Close()
 }
 
-func Test_Au10_StreamWriter_FailedToCreate(test *testing.T) {
+func Test_Au10_StreamWriter_FailedToNew(test *testing.T) {
 	ctrl := gomock.NewController(test)
 	defer ctrl.Finish()
 	assert := assert.New(test)
@@ -76,13 +76,13 @@ func Test_Au10_StreamWriter_FailedToCreate(test *testing.T) {
 	factory := mock_au10.NewMockFactory(ctrl)
 
 	service := mock_au10.NewMockService(ctrl)
-	factory.EXPECT().CreateSaramaProducer(service).
+	factory.EXPECT().NewSaramaProducer(service).
 		Return(nil, errors.New("test error"))
 	service.EXPECT().GetFactory().Return(factory)
 	service.EXPECT().GetNodeType().Return("test node type")
 
-	stream, err := au10.CreateFactory().
-		CreateStreamWriter("test topic 1", service)
+	stream, err := au10.NewFactory().
+		NewStreamWriter("test topic 1", service)
 	assert.Nil(stream)
 	assert.EqualError(err, "test error")
 }
@@ -105,9 +105,9 @@ func Test_Au10_StreamWriter_ErrorsInProducer(test *testing.T) {
 	producer.EXPECT().Close().Do(func() { close(producerErrsChan) }).
 		Return(errors.New("test error at closing for log"))
 	producer.EXPECT().Errors().Return(producerErrsChan)
-	factory.EXPECT().CreateSaramaProducer(service).Return(producer, nil)
+	factory.EXPECT().NewSaramaProducer(service).Return(producer, nil)
 	service.EXPECT().GetFactory().Return(factory)
-	stream, err := au10.CreateFactory().CreateStreamWriter("log", service)
+	stream, err := au10.NewFactory().NewStreamWriter("log", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 	producerErrsChan <- &sarama.ProducerError{
@@ -116,13 +116,13 @@ func Test_Au10_StreamWriter_ErrorsInProducer(test *testing.T) {
 	stream.Close()
 
 	// usual log:
-	factory.EXPECT().CreateSaramaProducer(service).Return(producer, nil)
+	factory.EXPECT().NewSaramaProducer(service).Return(producer, nil)
 	service.EXPECT().GetFactory().Return(factory)
 	producerErrsChan = make(chan *sarama.ProducerError)
 	producer.EXPECT().Close().Do(func() { close(producerErrsChan) }).
 		Return(errors.New("test error at closing for non-log"))
 	producer.EXPECT().Errors().Return(producerErrsChan)
-	stream, err = au10.CreateFactory().CreateStreamWriter("not log", service)
+	stream, err = au10.NewFactory().NewStreamWriter("not log", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 	log := mock_au10.NewMockLog(ctrl)

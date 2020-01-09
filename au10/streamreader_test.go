@@ -22,7 +22,7 @@ func Test_Au10_StreamReader_Dummy(test *testing.T) {
 	defer ctrl.Finish()
 	assert := assert.New(test)
 	service := mock_au10.NewMockService(ctrl)
-	stream := au10.CreateFactory().CreateStreamReader(
+	stream := au10.NewFactory().NewStreamReader(
 		[]string{"topic 1", "topic 2"}, nil, service)
 	assert.NotNil(stream)
 	stream.Close()
@@ -47,7 +47,7 @@ type streamReaderTest struct {
 	numberOfSubscribers int
 }
 
-func createStreamReaderTest(
+func newStreamReaderTest(
 	test *testing.T,
 	convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 	consumerCloseResult error) *streamReaderTest {
@@ -97,10 +97,10 @@ func createStreamReaderTest(
 			}
 		})
 
-	result.factory.EXPECT().CreateSaramaConsumer(result.service).
+	result.factory.EXPECT().NewSaramaConsumer(result.service).
 		Return(result.consumer, nil)
 
-	result.stream = au10.CreateFactory().CreateStreamReader(
+	result.stream = au10.NewFactory().NewStreamReader(
 		result.topic, convertMessage, result.service)
 	result.assert.NotNil(result.stream)
 
@@ -113,11 +113,11 @@ func (test *streamReaderTest) close() {
 	test.mock.Finish()
 }
 
-func (test *streamReaderTest) createSubscription(errChan chan<- error) (
+func (test *streamReaderTest) newSubscription(errChan chan<- error) (
 	au10.StreamSubscription, *[]uint32) {
 
 	messages := &[]uint32{}
-	subscription, err := test.stream.CreateSubscription(
+	subscription, err := test.stream.NewSubscription(
 		func(message interface{}) {
 			*messages = append(*messages, message.(uint32))
 			test.messagesChanBarrier.Done()
@@ -172,7 +172,7 @@ func (test *streamReaderTest) getTopic() string {
 }
 
 func Test_Au10_StreamReader_1Subscription(t *testing.T) {
-	test := createStreamReaderTest(
+	test := newStreamReaderTest(
 		t,
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return binary.BigEndian.Uint32(message.Value), nil
@@ -189,7 +189,7 @@ func Test_Au10_StreamReader_1Subscription(t *testing.T) {
 	}()
 
 	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
-	subscription, messages := test.createSubscription(errChan)
+	subscription, messages := test.newSubscription(errChan)
 	if subscription == nil {
 		return
 	}
@@ -213,7 +213,7 @@ func Test_Au10_StreamReader_1Subscription(t *testing.T) {
 }
 
 func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
-	test := createStreamReaderTest(
+	test := newStreamReaderTest(
 		t,
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return binary.BigEndian.Uint32(message.Value), nil
@@ -233,11 +233,11 @@ func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
 		test.assert.False(isOpened)
 	}()
 
-	subscription1, messages1 := test.createSubscription(errChan)
+	subscription1, messages1 := test.newSubscription(errChan)
 	if subscription1 == nil {
 		return
 	}
-	subscription2, messages2 := test.createSubscription(errChan)
+	subscription2, messages2 := test.newSubscription(errChan)
 	if subscription2 == nil {
 		return
 	}
@@ -255,7 +255,7 @@ func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
 		lastMessage++
 	}
 
-	subscription3, messages3 := test.createSubscription(errChan)
+	subscription3, messages3 := test.newSubscription(errChan)
 	if subscription3 == nil {
 		return
 	}
@@ -298,7 +298,7 @@ func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
 }
 
 func Test_Au10_StreamReader_Errors(t *testing.T) {
-	test := createStreamReaderTest(
+	test := newStreamReaderTest(
 		t,
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return nil, errors.New("test convert error")
@@ -310,7 +310,7 @@ func Test_Au10_StreamReader_Errors(t *testing.T) {
 	defer close(errChan)
 
 	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
-	subscription, messages := test.createSubscription(errChan)
+	subscription, messages := test.newSubscription(errChan)
 	if subscription == nil {
 		return
 	}
@@ -340,26 +340,26 @@ func Test_Au10_StreamReader_StartError(test *testing.T) {
 	service := mock_au10.NewMockService(mock)
 	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
 
-	stream := au10.CreateFactory().CreateStreamReader(
+	stream := au10.NewFactory().NewStreamReader(
 		[]string{"test topic"}, nil, service)
 	assert.NotNil(stream)
 
 	service.EXPECT().Log().AnyTimes().Return(log)
 
-	factory.EXPECT().CreateSaramaConsumer(service).
+	factory.EXPECT().NewSaramaConsumer(service).
 		Return(nil, errors.New("create Sarama consumer error"))
 
-	subscription, err := stream.CreateSubscription(nil, nil)
+	subscription, err := stream.NewSubscription(nil, nil)
 	assert.Nil(subscription)
 	assert.EqualError(err,
 		`failed to start steam reading "test topic" to subscribe: "failed to open stream reading "test topic": "create Sarama consumer error""`)
 }
 
 func Test_Au10_StreamReader_NotClosedSubscription(t *testing.T) {
-	test := createStreamReaderTest(t, nil, nil)
+	test := newStreamReaderTest(t, nil, nil)
 	defer test.close()
 	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
-	test.createSubscription(nil)
+	test.newSubscription(nil)
 	test.log.EXPECT().Error(
 		`Not all (%d) subscribes of stream reading "%s" closed.`,
 		1, test.getTopic())

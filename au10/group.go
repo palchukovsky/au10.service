@@ -16,8 +16,8 @@ type Rights interface {
 	Get() Group
 }
 
-// CreateRights creates a new instance of Rights.
-func CreateRights(domain, name string) Rights {
+// NewRights creates a new instance of Rights.
+func NewRights(domain, name string) Rights {
 	return &group{Group{Domain: domain, Name: name}}
 }
 
@@ -31,8 +31,8 @@ type Membership interface {
 	IsAllowed([]Rights) bool
 }
 
-// CreateMembership creates a new instance of Membership.
-func CreateMembership(domain, name string) Membership {
+// NewMembership creates a new instance of Membership.
+func NewMembership(domain, name string) Membership {
 	return &group{Group{Domain: domain, Name: name}}
 }
 

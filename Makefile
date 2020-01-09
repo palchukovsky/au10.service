@@ -121,25 +121,27 @@ stub: ## Generate stubs.
 mock: ## Generate mock interfaces for unit-tests.
 # "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
 	-go list -e -compiled=true -test=true ./*
-
 	$(call gen_mock,au10/factory,Factory)
 	$(call gen_mock,au10/service,Service)
 	$(call gen_mock,au10/streamreader,StreamReader)
 	$(call gen_mock,au10/streamwriter,StreamWriter)
-	$(call gen_mock_aux,au10/log,Log LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/log,Log LogReader LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/member,Memeber)
 	$(call gen_mock,au10/group,Rights Membership)
 	$(call gen_mock_aux,au10/user,User,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/users,Users)
 	$(call gen_mock_aux,au10/post,Post Vocal,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/posts,Posts PostsSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/publisher,Publisher,$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/message,Message,$(CODE_REPO)/au10=au10/member.go)
 
+# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
+	-go list -e -compiled=true -test=true ./accesspoint/lib/*
 	$(call gen_mock,accesspoint/lib/service,Service)
 	$(call gen_mock,accesspoint/lib/client,Client)
 	$(call gen_mock,accesspoint/lib/grpc,Grpc)
 	$(call gen_mock_ext,$(CODE_REPO)/accesspoint/proto,Au10_ReadLogServer$(COMMA)Au10_ReadPostsServer$(COMMA)Au10_ReadMessageServer,proto)
-	
+
 	$(call gen_mock_ext,context,Context,context)
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
 

@@ -13,8 +13,15 @@ import (
 
 // Service describes access point service interface.
 type Service interface {
-	GetAu10() au10.Service
 	GetGlobalProps() *proto.Props
+
+	Log() au10.Log
+	GetLogReader() au10.LogReader
+
+	GetPosts() au10.Posts
+	GetPublisher() au10.Publisher
+
+	GetUsers() au10.Users
 
 	GetLogSubscriptionInfo() *SubscriptionInfo
 	GetPostsSubscriptionInfo() *SubscriptionInfo
@@ -23,11 +30,18 @@ type Service interface {
 }
 
 type service struct {
-	props *proto.Props
-	au10  au10.Service
+	service au10.Service
 
-	defaultUser  au10.User
-	createClient func(
+	props *proto.Props
+
+	log       au10.Log
+	logReader au10.LogReader
+	posts     au10.Posts
+	publisher au10.Publisher
+	users     au10.Users
+
+	defaultUser au10.User
+	newClient   func(
 		requestID uint64,
 		request string,
 		user au10.User,
@@ -40,29 +54,44 @@ type service struct {
 	postsSubscriptionInfo *SubscriptionInfo
 }
 
-// CreateAu10Server creates Au10Server server implementation instance.
-func CreateAu10Server(
+// NewAu10Server creates Au10Server server implementation instance.
+func NewAu10Server(
 	props *proto.Props,
+	log au10.Log,
+	logReader au10.LogReader,
+	posts au10.Posts,
+	publisher au10.Publisher,
+	users au10.Users,
 	defaultUser au10.User,
-	createClient func(
+	newClient func(
 		requestID uint64,
 		request string,
 		user au10.User,
 		service Service) Client,
-	grpc Grpc,
-	au10Service au10.Service) proto.Au10Server {
-
+	grpc Grpc) proto.Au10Server {
 	return &service{
 		props:                 props,
-		au10:                  au10Service,
+		log:                   log,
+		logReader:             logReader,
+		posts:                 posts,
+		publisher:             publisher,
+		users:                 users,
 		defaultUser:           defaultUser,
-		createClient:          createClient,
+		newClient:             newClient,
 		grpc:                  grpc,
 		logSubscriptionInfo:   &SubscriptionInfo{},
 		postsSubscriptionInfo: &SubscriptionInfo{}}
 }
 
-func (service *service) GetAu10() au10.Service { return service.au10 }
+func (service *service) Log() au10.Log        { return service.log }
+func (service *service) GetPosts() au10.Posts { return service.posts }
+func (service *service) GetUsers() au10.Users { return service.users }
+func (service *service) GetLogReader() au10.LogReader {
+	return service.logReader
+}
+func (service *service) GetPublisher() au10.Publisher {
+	return service.publisher
+}
 
 func (service *service) GetLogSubscriptionInfo() *SubscriptionInfo {
 	return service.logSubscriptionInfo
@@ -90,7 +119,7 @@ func (service *service) Auth(
 	ctx context.Context,
 	request *proto.AuthRequest) (*proto.AuthResponse, error) {
 
-	client, err := service.createRequestClient(ctx, "Auth")
+	client, err := service.newRequestClient(ctx, "Auth")
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +132,7 @@ func (service *service) Auth(
 	if token != nil {
 		err := service.grpc.SendHeader(ctx, metadata.Pairs("auth", *token))
 		if err != nil {
-			return nil, client.CreateError(codes.Internal,
+			return nil, client.RegisterError(codes.Internal,
 				`failed to set auth-metadata: "%s"`, err)
 		}
 	}
@@ -116,7 +145,7 @@ func (service *service) Auth(
 
 func (service *service) ReadLog(
 	request *proto.LogReadRequest, subscription proto.Au10_ReadLogServer) error {
-	client, err := service.createRequestClient(subscription.Context(), "ReadLog")
+	client, err := service.newRequestClient(subscription.Context(), "ReadLog")
 	if err != nil {
 		return err
 	}
@@ -126,7 +155,7 @@ func (service *service) ReadLog(
 func (service *service) ReadPosts(
 	request *proto.PostsReadRequest,
 	subscription proto.Au10_ReadPostsServer) error {
-	client, err := service.createRequestClient(
+	client, err := service.newRequestClient(
 		subscription.Context(), "ReadPosts")
 	if err != nil {
 		return err
@@ -137,7 +166,7 @@ func (service *service) ReadPosts(
 func (service *service) ReadMessage(
 	request *proto.MessageReadRequest,
 	subscription proto.Au10_ReadMessageServer) error {
-	client, err := service.createRequestClient(
+	client, err := service.newRequestClient(
 		subscription.Context(), "ReadMessage")
 	if err != nil {
 		return err
@@ -147,7 +176,7 @@ func (service *service) ReadMessage(
 
 func (service *service) AddVocal(
 	ctx context.Context, request *proto.VocalAddRequest) (*proto.Vocal, error) {
-	client, err := service.createRequestClient(ctx, "AddVocal")
+	client, err := service.newRequestClient(ctx, "AddVocal")
 	if err != nil {
 		return nil, err
 	}
@@ -157,22 +186,22 @@ func (service *service) AddVocal(
 func (service *service) WriteMessageChunk(
 	ctx context.Context,
 	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
-	client, err := service.createRequestClient(ctx, "WriteMessageChunk")
+	client, err := service.newRequestClient(ctx, "WriteMessageChunk")
 	if err != nil {
 		return nil, err
 	}
 	return client.WriteMessageChunk(request)
 }
 
-func (service *service) createRequestClient(
+func (service *service) newRequestClient(
 	ctx context.Context, request string) (Client, error) {
 	user := service.defaultUser
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if token, ok := md["auth"]; ok && len(token) == 1 {
 			var err error
-			user, err = service.au10.GetUsers().FindSession(token[0])
+			user, err = service.GetUsers().FindSession(token[0])
 			if err != nil {
-				service.au10.Log().Error(`Failed to find user session by token: "%s".`,
+				service.Log().Error(`Failed to find user session by token: "%s".`,
 					err)
 				return nil, status.Errorf(codes.Internal, "server internal error")
 			}
@@ -181,7 +210,7 @@ func (service *service) createRequestClient(
 			}
 		}
 	}
-	return service.createClient(
+	return service.newClient(
 			atomic.AddUint64(&service.lastRequestID, 1), request, user, service),
 		nil
 }

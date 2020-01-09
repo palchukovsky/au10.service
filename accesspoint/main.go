@@ -29,39 +29,38 @@ func main() {
 	flag.Parse()
 
 	service := au10.DialOrPanic(nodeType, *nodeName,
-		strings.Split(*streamBrokers, ","), au10.CreateFactory())
+		strings.Split(*streamBrokers, ","), au10.NewFactory())
 	defer service.Close()
 
-	if err := service.InitUsers(); err != nil {
+	users, err := au10.NewUsers(service.GetFactory())
+	if err != nil {
 		service.Log().Fatal(`Failed to start users service: "%s".`, err)
 		return
 	}
-	if err := service.InitPosts(); err != nil {
-		service.Log().Fatal(`Failed to start users service: "%s".`, err)
-		return
-	}
-	if err := service.GetPosts().InitSubscriptionService(); err != nil {
-		service.Log().Fatal(`Failed to start posts subscription service: "%s".`,
-			err)
-		return
-	}
-	if err := service.Log().InitSubscriptionService(); err != nil {
-		service.Log().Fatal(`Failed to start log subscription service: "%s".`, err)
-		return
-	}
+	defer users.Close()
 
-	defaultUser, err := service.GetFactory().CreateUser(
-		"", au10.CreateMembership("", ""), []au10.Rights{})
+	posts := au10.NewPosts(service)
+	defer posts.Close()
+
+	var publisher au10.Publisher
+	publisher, err = au10.NewPublisher(service)
+	defer publisher.Close()
+
+	var defaultUser au10.User
+	defaultUser, err = service.GetFactory().NewUser(
+		"", au10.NewMembership("", ""), []au10.Rights{})
 	if err != nil {
 		service.Log().Fatal(`Failed to created default user: "%s".`, err)
 		return
 	}
 
-	accesspoint := lib.CreateAu10Server(
-		props, defaultUser, lib.CreateClient, lib.CreateGrpc(), service)
+	logReader := au10.NewLogReader(service)
+	defer logReader.Close()
+
+	accesspoint := lib.NewAu10Server(props, service.Log(), logReader, posts,
+		publisher, users, defaultUser, lib.NewClient, lib.NewGrpc())
 	server := grpc.NewServer()
 	defer server.Stop()
-
 	proto.RegisterAu10Server(server, accesspoint)
 
 	service.Log().Info(`Starting server on port "%d"...`, *port)

@@ -15,7 +15,7 @@ func Test_Accesspoint_Grpc(test *testing.T) {
 	defer mock.Finish()
 	assert := assert.New(test)
 
-	grpc := ap.CreateGrpc()
+	grpc := ap.NewGrpc()
 
 	ctx := mock_context.NewMockContext(mock)
 	ctx.EXPECT().Value(gomock.Any()).Return(nil)

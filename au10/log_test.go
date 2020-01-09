@@ -27,15 +27,14 @@ func Test_Au10_Log(test *testing.T) {
 	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
 	service.EXPECT().GetNodeName().MinTimes(1).Return("test node name")
 
-	factory.EXPECT().CreateStreamWriter(au10.LogStreamTopic, service).
+	factory.EXPECT().NewStreamWriter("log", service).
 		Return(nil, errors.New("writer test error"))
-	log, err := au10.CreateFactory().CreateLog(service)
+	log, err := au10.NewFactory().NewLog(service)
 	assert.Nil(log)
 	assert.EqualError(err, "writer test error")
 
-	factory.EXPECT().CreateStreamWriter(au10.LogStreamTopic, service).
-		Return(writer, nil)
-	log, err = au10.CreateFactory().CreateLog(service)
+	factory.EXPECT().NewStreamWriter("log", service).Return(writer, nil)
+	log, err = au10.NewFactory().NewLog(service)
 	assert.NotNil(log)
 	defer log.Close()
 	assert.NoError(err)
@@ -79,15 +78,52 @@ func Test_Au10_Log(test *testing.T) {
 		Severity: 3,
 		Text:     "test log error record 2"}).Return(errors.New("test error"))
 	log.Error("test log %s record 2", "error")
+}
 
-	assert.PanicsWithValue("log subscription service not initialized",
-		func() { log.Subscribe() })
+func Test_Au10_NewLogRecord(test *testing.T) {
+	assert := assert.New(test)
+	now := time.Now()
+
+	record, err := au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
+		Key: []byte("test key"),
+		Value: []byte(
+			`{"n": "test node name", "s": 2, "t": "test log record test"}`),
+		Offset:    123,
+		Timestamp: now})
+	if !assert.NotNil(record) {
+		return
+	}
+	assert.NoError(err)
+	assert.Equal(int64(123), record.GetSequenceNumber())
+	assert.True(now.Equal(record.GetTime()))
+	assert.Equal("test log record test", record.GetText())
+	assert.Equal("warn", record.GetSeverity())
+	assert.Equal("test key", record.GetNodeType())
+	assert.Equal("test node name", record.GetNodeName())
+
+	record, err = au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
+		Key:       []byte("test key"),
+		Value:     []byte(`{`),
+		Offset:    123,
+		Timestamp: now})
+	assert.Nil(record)
+	assert.NotNil(err)
+}
+
+func Test_Au10_LogReader(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
+	assert := assert.New(test)
+
+	factory := mock_au10.NewMockFactory(mock)
+
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
 
 	reader := mock_au10.NewMockStreamReader(mock)
 	reader.EXPECT().Close()
 	var convertMessage func(*sarama.ConsumerMessage) (interface{}, error)
-	factory.EXPECT().
-		CreateStreamReader([]string{au10.LogStreamTopic}, gomock.Any(), service).
+	factory.EXPECT().NewStreamReader([]string{"log"}, gomock.Any(), service).
 		Do(func(topics []string,
 			convertMessageCallback func(*sarama.ConsumerMessage) (interface{}, error),
 			service au10.Service) {
@@ -95,14 +131,16 @@ func Test_Au10_Log(test *testing.T) {
 			convertMessage = convertMessageCallback
 		}).
 		Return(reader)
-	assert.Nil(log.InitSubscriptionService())
-	assert.EqualError(log.InitSubscriptionService(),
-		"log subscription service already initiated")
 
-	reader.EXPECT().CreateSubscription(gomock.Any(), gomock.Any()).
+	log := au10.NewLogReader(service)
+	assert.NotNil(log)
+	defer log.Close()
+
+	assert.Equal(au10.Group{Domain: "", Name: ""}, log.GetMembership().Get())
+
+	reader.EXPECT().NewSubscription(gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("test create subscription error"))
-	var subscription au10.LogSubscription
-	subscription, err = log.Subscribe()
+	subscription, err := log.Subscribe()
 	assert.Nil(subscription)
 	assert.EqualError(err, "test create subscription error")
 
@@ -114,7 +152,7 @@ func Test_Au10_Log(test *testing.T) {
 	convertedMessage, err = convertMessage(&sarama.ConsumerMessage{
 		Key: []byte("test key"),
 		Value: []byte(
-			`{"Node": "test node name", "Severity": 2, "Text": "test log record test"}`),
+			`{"n": "test node name", "s": 2, "t": "test log record test"}`),
 		Offset:    123,
 		Timestamp: now})
 	assert.Equal(int64(123),
@@ -131,7 +169,7 @@ func Test_Au10_Log(test *testing.T) {
 	streamSubscription.EXPECT().Close()
 	var handleSubscription func(interface{})
 	var subscriptionErrChan chan<- error
-	reader.EXPECT().CreateSubscription(gomock.Any(), gomock.Any()).
+	reader.EXPECT().NewSubscription(gomock.Any(), gomock.Any()).
 		Do(func(handle func(interface{}), errChan chan<- error) {
 			handleSubscription = handle
 			subscriptionErrChan = errChan
@@ -178,34 +216,4 @@ func Test_Au10_Log(test *testing.T) {
 	messageBarrier.Wait()
 	subscriptionErrChan <- nil
 	stopBarrier.Wait()
-}
-
-func Test_Au10_CreateLogRecord(test *testing.T) {
-	assert := assert.New(test)
-	now := time.Now()
-
-	record, err := au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
-		Key: []byte("test key"),
-		Value: []byte(
-			`{"Node": "test node name", "Severity": 2, "Text": "test log record test"}`),
-		Offset:    123,
-		Timestamp: now})
-	if !assert.NotNil(record) {
-		return
-	}
-	assert.NoError(err)
-	assert.Equal(int64(123), record.GetSequenceNumber())
-	assert.True(now.Equal(record.GetTime()))
-	assert.Equal("test log record test", record.GetText())
-	assert.Equal("warn", record.GetSeverity())
-	assert.Equal("test key", record.GetNodeType())
-	assert.Equal("test node name", record.GetNodeName())
-
-	record, err = au10.ConvertSaramaMessageIntoLogRecord(&sarama.ConsumerMessage{
-		Key:       []byte("test key"),
-		Value:     []byte(`{`),
-		Offset:    123,
-		Timestamp: now})
-	assert.Nil(record)
-	assert.NotNil(err)
 }

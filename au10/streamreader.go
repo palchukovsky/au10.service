@@ -14,7 +14,7 @@ import (
 // StreamReader describes a data stream reading client.
 type StreamReader interface {
 	Close()
-	CreateSubscription(
+	NewSubscription(
 		handle func(interface{}),
 		errChan chan<- error) (StreamSubscription, error)
 }
@@ -84,7 +84,7 @@ type streamReader struct {
 	consumer      sarama.ConsumerGroup
 }
 
-func (*factory) CreateStreamReader(
+func (*factory) NewStreamReader(
 	topics []string,
 	convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 	service Service) StreamReader {
@@ -115,7 +115,7 @@ func (stream *streamReader) Close() {
 	close(stream.requestsChan)
 }
 
-func (stream *streamReader) CreateSubscription(
+func (stream *streamReader) NewSubscription(
 	handle func(interface{}),
 	errChan chan<- error) (StreamSubscription, error) {
 
@@ -193,7 +193,7 @@ func (stream *streamReader) request(subscription *streamSubscription) error {
 
 func (stream *streamReader) start() error {
 	var err error
-	stream.consumer, err = stream.service.GetFactory().CreateSaramaConsumer(
+	stream.consumer, err = stream.service.GetFactory().NewSaramaConsumer(
 		stream.service)
 	if err != nil {
 		return fmt.Errorf(`failed to open stream reading "%s": "%s"`,

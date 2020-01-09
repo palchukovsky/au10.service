@@ -20,7 +20,7 @@ func Test_Au10_User_Fields(test *testing.T) {
 		mock_au10.NewMockRights(ctrl),
 		mock_au10.NewMockRights(ctrl)}
 
-	user, err := au10.CreateFactory().CreateUser(
+	user, err := au10.NewFactory().NewUser(
 		"test login", membership, rights)
 	assert.NoError(err)
 	assert.NotNil(user)

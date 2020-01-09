@@ -12,8 +12,8 @@ type Grpc interface {
 	SendHeader(context.Context, metadata.MD) error
 }
 
-// CreateGrpc creates new instance of Grpc.
-func CreateGrpc() Grpc {
+// NewGrpc creates new instance of Grpc.
+func NewGrpc() Grpc {
 	return &grpc{}
 }
 

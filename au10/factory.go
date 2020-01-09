@@ -8,28 +8,25 @@ import (
 
 // Factory provides the interface to create Au10 service object instances.
 type Factory interface {
-	CreateRedialSleepTime() time.Duration
+	NewRedialSleepTime() time.Duration
 
-	CreateStreamReader(
+	NewStreamReader(
 		topics []string,
 		convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 		service Service) StreamReader
-	CreateStreamWriter(topic string, service Service) (StreamWriter, error)
+	NewStreamWriter(topic string, service Service) (StreamWriter, error)
 
-	CreateLog(service Service) (Log, error)
+	NewLog(service Service) (Log, error)
 
-	CreateUsers(Factory) (Users, error)
-	CreateUser(login string, membership Membership, rights []Rights) (User, error)
+	NewUser(login string, membership Membership, rights []Rights) (User, error)
 
-	CreatePosts(service Service) Posts
-
-	CreateSaramaProducer(service Service) (sarama.AsyncProducer, error)
-	CreateSaramaConsumer(service Service) (sarama.ConsumerGroup, error)
+	NewSaramaProducer(service Service) (sarama.AsyncProducer, error)
+	NewSaramaConsumer(service Service) (sarama.ConsumerGroup, error)
 }
 
-// CreateFactory creates an instance of Factory interface.
-func CreateFactory() Factory { return new(factory) }
+// NewFactory creates an instance of Factory interface.
+func NewFactory() Factory { return new(factory) }
 
 type factory struct{}
 
-func (*factory) CreateRedialSleepTime() time.Duration { return 3 * time.Second }
+func (*factory) NewRedialSleepTime() time.Duration { return 3 * time.Second }

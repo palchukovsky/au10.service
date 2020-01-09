@@ -17,17 +17,16 @@ type Users interface {
 	GetAll() []User
 }
 
-func (*factory) CreateUsers(factory Factory) (
-	Users, error) {
-
+// NewUsers creates new users service instance.
+func NewUsers(factory Factory) (Users, error) {
 	result := &users{users: map[string]User{}}
 	var err error
-	result.createUser("root", "", "", []Rights{CreateRights("*", "*")}, factory, &err)
-	result.createUser("domain_root", "x-company", "", []Rights{CreateRights("x-company", "*")}, factory, &err)
-	result.createUser("domain_admin", "x-company", "admins",
-		[]Rights{CreateRights("x-company", "users"), CreateRights("x-company", "admins")}, factory, &err)
-	result.createUser("user1", "x-company", "users", []Rights{CreateRights("x-company", "users")}, factory, &err)
-	result.createUser("user2", "x-company", "users", []Rights{CreateRights("x-company", "users")}, factory, &err)
+	result.newUser("root", "", "", []Rights{NewRights("*", "*")}, factory, &err)
+	result.newUser("domain_root", "x-company", "", []Rights{NewRights("x-company", "*")}, factory, &err)
+	result.newUser("domain_admin", "x-company", "admins",
+		[]Rights{NewRights("x-company", "users"), NewRights("x-company", "admins")}, factory, &err)
+	result.newUser("user1", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
+	result.newUser("user2", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
 	if err != nil {
 		return nil, err
 	}
@@ -78,15 +77,14 @@ func (users *users) FindSession(token string) (User, error) {
 	return result, nil
 }
 
-func (users *users) createUser(
+func (users *users) newUser(
 	login, domain, group string, rights []Rights, factory Factory, err *error) {
-
 	if *err != nil {
 		return
 	}
 	var user User
-	user, *err = factory.CreateUser(
-		login, CreateMembership(domain, group), rights)
+	user, *err = factory.NewUser(
+		login, NewMembership(domain, group), rights)
 	if *err != nil {
 		return
 	}

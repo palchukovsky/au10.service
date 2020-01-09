@@ -13,7 +13,7 @@ import (
 func Test_Au10_Users_FindUser(test *testing.T) {
 	assert := assert.New(test)
 
-	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
+	users, err := au10.NewUsers(au10.NewFactory())
 	assert.NoError(err)
 	defer users.Close()
 
@@ -30,7 +30,7 @@ func Test_Au10_Users_FindUser(test *testing.T) {
 func Test_Au10_Users_All(test *testing.T) {
 	assert := assert.New(test)
 
-	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
+	users, err := au10.NewUsers(au10.NewFactory())
 	assert.NoError(err)
 	defer users.Close()
 
@@ -59,12 +59,12 @@ func Test_Au10_Users_Error(test *testing.T) {
 	assert := assert.New(test)
 
 	factory := mock_au10.NewMockFactory(mock)
-	factory.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mock_au10.NewMockUser(mock), nil)
-	factory.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("test error"))
 
-	users, err := au10.CreateFactory().CreateUsers(factory)
+	users, err := au10.NewUsers(factory)
 	assert.Nil(users)
 	assert.EqualError(err, "test error")
 }
@@ -72,7 +72,7 @@ func Test_Au10_Users_Error(test *testing.T) {
 func Test_Au10_Users_Auth(test *testing.T) {
 	assert := assert.New(test)
 
-	users, err := au10.CreateFactory().CreateUsers(au10.CreateFactory())
+	users, err := au10.NewUsers(au10.NewFactory())
 	assert.NoError(err)
 	defer users.Close()
 

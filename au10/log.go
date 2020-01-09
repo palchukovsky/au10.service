@@ -2,7 +2,6 @@ package au10
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -10,20 +9,12 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-// LogStreamTopic is a name of log stream topic.
-const LogStreamTopic = "log"
-
 // Log represents logger service.
 type Log interface {
 	Member
 
 	// Close closes the service.
 	Close()
-
-	// InitSubscriptionService initiates subscriber to read logs in the feature.
-	InitSubscriptionService() error
-	// Subscribe creates a subscription to log-messages.
-	Subscribe() (LogSubscription, error)
 
 	// Fatal formats and sends error message in the queue and prints to the
 	// standard logger and calls to os.Exit(1).
@@ -40,6 +31,17 @@ type Log interface {
 	// Debug formats and sends debug message in the queue and prints to the
 	// standard logger.
 	Debug(format string, args ...interface{})
+}
+
+// LogReader represents log recordes service service.
+type LogReader interface {
+	Member
+
+	// Close closes the service.
+	Close()
+
+	// Subscribe creates a subscription to log-messages.
+	Subscribe() (LogSubscription, error)
 }
 
 // LogSubscription represents subscription to logger data.
@@ -67,54 +69,33 @@ type LogRecord interface {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func (*factory) CreateLog(service Service) (Log, error) {
-	writer, err := service.GetFactory().CreateStreamWriter(LogStreamTopic, service)
+const logStreamTopic = "log"
+
+func (*factory) NewLog(service Service) (Log, error) {
+	stream, err := service.GetFactory().NewStreamWriter(logStreamTopic,
+		service)
 	if err != nil {
 		return nil, err
 	}
 	return &logService{
 			service:    service,
-			membership: CreateMembership("", ""),
-			writer:     writer},
+			membership: NewMembership("", ""),
+			stream:     stream},
 		nil
 }
 
 type logService struct {
 	service    Service
 	membership Membership
-	writer     StreamWriter
-	reader     StreamReader
+	stream     StreamWriter
 }
 
 func (service *logService) Close() {
-	if service.reader != nil {
-		service.reader.Close()
-	}
-	service.writer.Close()
+	service.stream.Close()
 }
 
 func (service *logService) GetMembership() Membership {
 	return service.membership
-}
-
-func (service *logService) InitSubscriptionService() error {
-	if service.reader != nil {
-		return errors.New("log subscription service already initiated")
-	}
-	service.reader = service.service.GetFactory().CreateStreamReader(
-		[]string{LogStreamTopic},
-		func(source *sarama.ConsumerMessage) (interface{}, error) {
-			return ConvertSaramaMessageIntoLogRecord(source)
-		},
-		service.service)
-	return nil
-}
-
-func (service *logService) Subscribe() (LogSubscription, error) {
-	if service.reader == nil {
-		panic("log subscription service not initialized")
-	}
-	return createLogSubscription(service)
 }
 
 func (service *logService) Fatal(format string, args ...interface{}) {
@@ -140,10 +121,9 @@ func (service *logService) Debug(format string, args ...interface{}) {
 
 func (service *logService) publish(
 	severity uint8, format string, args ...interface{}) {
-
 	message := fmt.Sprintf(format, args...)
 	log.Print(resolveLogSeverity(severity) + ":\t" + message)
-	err := service.writer.Push(LogRecordData{
+	err := service.stream.Push(LogRecordData{
 		Node:     service.service.GetNodeName(),
 		Severity: severity,
 		Text:     message})
@@ -170,28 +150,48 @@ func resolveLogSeverity(severity uint8) string {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type logSubscription struct {
-	subscription
-	stream      StreamSubscription
-	recordsChan chan LogRecord
+// NewLogReader creates log reader instance.
+func NewLogReader(service Service) LogReader {
+	return &logReader{
+		membership: NewMembership("", ""),
+		stream: service.GetFactory().NewStreamReader(
+			[]string{logStreamTopic},
+			func(source *sarama.ConsumerMessage) (interface{}, error) {
+				return ConvertSaramaMessageIntoLogRecord(source)
+			},
+			service)}
 }
 
-func createLogSubscription(service *logService) (LogSubscription, error) {
-	result := &logSubscription{
-		subscription: createSubscription(),
-		recordsChan:  make(chan LogRecord, 1)}
+func (reader *logReader) Close() {
+	reader.stream.Close()
+}
 
+func (reader *logReader) GetMembership() Membership { return reader.membership }
+
+func (reader *logReader) Subscribe() (LogSubscription, error) {
+	result := &logSubscription{
+		subscription: newSubscription(),
+		recordsChan:  make(chan LogRecord, 1)}
 	var err error
-	result.stream, err = service.reader.CreateSubscription(
-		func(message interface{}) {
-			result.recordsChan <- message.(LogRecord)
-		},
+	result.stream, err = reader.stream.NewSubscription(
+		func(message interface{}) { result.recordsChan <- message.(LogRecord) },
 		result.errChan)
 	if err != nil {
 		result.Close()
 		return nil, err
 	}
 	return result, nil
+}
+
+type logReader struct {
+	membership Membership
+	stream     StreamReader
+}
+
+type logSubscription struct {
+	subscription
+	stream      StreamSubscription
+	recordsChan chan LogRecord
 }
 
 func (subscription *logSubscription) Close() {
@@ -214,9 +214,9 @@ func (subscription *logSubscription) GetErrChan() <-chan error {
 
 // LogRecordData describes log record in a stream.
 type LogRecordData struct {
-	Node     string
-	Severity uint8
-	Text     string
+	Node     string `json:"n"`
+	Severity uint8  `json:"s"`
+	Text     string `json:"t"`
 }
 
 type logRecord struct {

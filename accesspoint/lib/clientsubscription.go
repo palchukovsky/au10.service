@@ -17,11 +17,11 @@ type SubscriptionInfo struct{ NumberOfSubscribers uint32 }
 ////////////////////////////////////////////////////////////////////////////////
 
 func (client *client) runLogSubscription(
-	log au10.Log, stream proto.Au10_ReadLogServer) error {
+	log au10.LogReader, stream proto.Au10_ReadLogServer) error {
 
 	subscription, err := log.Subscribe()
 	if err != nil {
-		return client.CreateError(codes.Internal, `failed to subscribe: "%s"`, err)
+		return client.RegisterError(codes.Internal, `failed to subscribe: "%s"`, err)
 	}
 	return client.runSubscription(
 		stream.Context(),
@@ -63,7 +63,7 @@ func (client *client) runPostsSubscription(
 
 	subscription, err := posts.Subscribe()
 	if err != nil {
-		return client.CreateError(codes.Internal, `failed to subscribe: "%s"`, err)
+		return client.RegisterError(codes.Internal, `failed to subscribe: "%s"`, err)
 	}
 	return client.runSubscription(
 		stream.Context(),
@@ -157,7 +157,7 @@ func (client *client) runSubscription(
 	numberOfSubscribers = client.service.UnregisterSubscriber()
 
 	if err != nil {
-		return client.CreateError(codes.Internal, `Failed: "%s" (%d/%d)`,
+		return client.RegisterError(codes.Internal, `Failed: "%s" (%d/%d)`,
 			err, info.NumberOfSubscribers, numberOfSubscribers)
 	}
 	client.LogDebug("Canceled (%d/%d).",

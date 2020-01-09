@@ -1,6 +1,10 @@
 package au10
 
-import "time"
+import (
+	"time"
+
+	"github.com/Shopify/sarama"
+)
 
 // PostID is a post ID.
 type PostID uint32
@@ -23,24 +27,31 @@ type Vocal interface {
 	Post
 }
 
-// CreatePost creates new post object.
-func CreatePost(id PostID, location *GeoPoint) Post {
-	return &post{
-		membership: CreateMembership("", ""),
-		id:         id,
-		location:   location}
+// PostData describes post record in a stream.
+type PostData struct {
+	ID       PostID        `json:"i"`
+	Time     int64         `json:"t"`
+	Location *GeoPoint     `json:"l"`
+	Messages []MessageData `json:"m"`
 }
 
 type post struct {
 	membership Membership
-	id         PostID
-	time       time.Time
-	messages   []Message
-	location   *GeoPoint
+	message    *sarama.ConsumerMessage
+	data       PostData
 }
 
+func (post *post) GetID() PostID             { return PostID(post.data.ID) }
 func (post *post) GetMembership() Membership { return post.membership }
-func (post *post) GetID() PostID             { return post.id }
-func (post *post) GetTime() time.Time        { return post.time }
-func (post *post) GetMessages() []Message    { return post.messages }
-func (post *post) GetLocation() *GeoPoint    { return post.location }
+func (post *post) GetLocation() *GeoPoint    { return post.data.Location }
+func (post *post) GetTime() time.Time {
+	return time.Unix(0, post.data.Time)
+}
+
+func (post *post) GetMessages() []Message {
+	result := make([]Message, len(post.data.Messages))
+	for i := range post.data.Messages {
+		result[i] = NewMessage(&post.data.Messages[i], post)
+	}
+	return result
+}

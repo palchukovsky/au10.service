@@ -15,7 +15,7 @@ type StreamWriter interface {
 	Push(interface{}) error
 }
 
-func (*factory) CreateStreamWriter(
+func (*factory) NewStreamWriter(
 	topic string, service Service) (StreamWriter, error) {
 
 	result := &streamWriter{
@@ -24,7 +24,7 @@ func (*factory) CreateStreamWriter(
 		key:     sarama.StringEncoder(service.GetNodeType())}
 
 	var err error
-	result.producer, err = service.GetFactory().CreateSaramaProducer(service)
+	result.producer, err = service.GetFactory().NewSaramaProducer(service)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (*factory) CreateStreamWriter(
 		for errMessage := range result.producer.Errors() {
 			logMessage := fmt.Sprintf(`Stream "%s" writing error: "%s".`,
 				result.topic, errMessage.Err)
-			if result.topic == LogStreamTopic {
+			if result.topic == logStreamTopic {
 				// for log stream, this record creates a sequence of calls without end
 				log.Printf(logMessage)
 			} else {
@@ -60,7 +60,7 @@ func (stream *streamWriter) Close() {
 	if err != nil {
 		message := fmt.Sprintf(`Failed to close stream writing "%s": "%s".`,
 			stream.topic, err)
-		if stream.topic == LogStreamTopic {
+		if stream.topic == logStreamTopic {
 			// for log stream, this record creates a sequence of calls without end
 			log.Printf(message)
 		} else {

@@ -16,7 +16,7 @@ type Client interface {
 	LogWarn(format string, args ...interface{})
 	LogInfo(format string, args ...interface{})
 	LogDebug(format string, args ...interface{})
-	CreateError(code codes.Code, descFormat string, args ...interface{}) error
+	RegisterError(code codes.Code, descFormat string, args ...interface{}) error
 
 	GetAllowedMethods() *proto.AuthResponse_AllowedMethods
 
@@ -28,8 +28,8 @@ type Client interface {
 	WriteMessageChunk(*proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error)
 }
 
-// CreateClient creates new Client instance.
-func CreateClient(
+// NewClient creates new Client instance.
+func NewClient(
 	requestID uint64, request string, user au10.User, service Service) Client {
 
 	return &client{
@@ -52,16 +52,16 @@ func (client *client) getLogHeader(format string) string {
 		format
 }
 func (client *client) LogError(format string, args ...interface{}) {
-	client.service.GetAu10().Log().Error(client.getLogHeader(format), args...)
+	client.service.Log().Error(client.getLogHeader(format), args...)
 }
 func (client *client) LogWarn(format string, args ...interface{}) {
-	client.service.GetAu10().Log().Warn(client.getLogHeader(format), args...)
+	client.service.Log().Warn(client.getLogHeader(format), args...)
 }
 func (client *client) LogInfo(format string, args ...interface{}) {
-	client.service.GetAu10().Log().Info(client.getLogHeader(format), args...)
+	client.service.Log().Info(client.getLogHeader(format), args...)
 }
 func (client *client) LogDebug(format string, args ...interface{}) {
-	client.service.GetAu10().Log().Debug(client.getLogHeader(format), args...)
+	client.service.Log().Debug(client.getLogHeader(format), args...)
 }
 
 var starusByCode = map[codes.Code]string{
@@ -84,7 +84,7 @@ var starusByCode = map[codes.Code]string{
 	codes.Unauthenticated:    "UNAUTHENTICATED",
 }
 
-func (client *client) CreateError(
+func (client *client) RegisterError(
 	code codes.Code, descFormat string, args ...interface{}) error {
 	desc := fmt.Sprintf(descFormat, args...)
 	if len(desc) > 0 {
@@ -93,7 +93,7 @@ func (client *client) CreateError(
 		client.LogError("RPC error %d.", code)
 	}
 	var externalDesc string
-	if client.service.GetAu10().Log().GetMembership().IsAllowed(client.user.GetRights()) {
+	if client.service.Log().GetMembership().IsAllowed(client.user.GetRights()) {
 		externalDesc = desc
 	} else {
 		var ok bool
@@ -107,9 +107,9 @@ func (client *client) CreateError(
 }
 
 func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
-	user, token, err := client.service.GetAu10().GetUsers().Auth(request.Login)
+	user, token, err := client.service.GetUsers().Auth(request.Login)
 	if err != nil {
-		return nil, client.CreateError(codes.Internal, `failed to auth "%s": "%s"`,
+		return nil, client.RegisterError(codes.Internal, `failed to auth "%s": "%s"`,
 			request.Login, err)
 	}
 	if token == nil {
@@ -123,7 +123,7 @@ func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
 
 func (client *client) ReadLog(
 	request *proto.LogReadRequest, stream proto.Au10_ReadLogServer) error {
-	log := client.service.GetAu10().Log()
+	log := client.service.GetLogReader()
 	if err := client.checkRights(log, "log"); err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (client *client) ReadLog(
 
 func (client *client) ReadPosts(
 	request *proto.PostsReadRequest, stream proto.Au10_ReadPostsServer) error {
-	posts := client.service.GetAu10().GetPosts()
+	posts := client.service.GetPosts()
 	if err := client.checkRights(posts, "posts"); err != nil {
 		return err
 	}
@@ -151,12 +151,12 @@ func (client *client) ReadMessage(
 	messageSize := message.GetSize()
 	for offset := uint64(0); offset <= messageSize; offset += chunkSize {
 		if err := message.Load(&chunk.Chunk, offset); err != nil {
-			return client.CreateError(codes.Internal,
+			return client.RegisterError(codes.Internal,
 				`failed to load chunk "%s"/"%s"/%d: "%s"`,
 				request.PostID, request.MessageID, offset, err)
 		}
 		if err := stream.Send(chunk); err != nil {
-			return client.CreateError(codes.Internal,
+			return client.RegisterError(codes.Internal,
 				`failed to send chunk "%s"/"%s"/%d: "%s"`,
 				request.PostID, request.MessageID, offset, err)
 		}
@@ -174,26 +174,26 @@ func (client *client) AddVocal(
 			Kind: convertMessageKindFromProto(m.Kind, &err),
 			Size: m.Size}
 		if err != nil {
-			return nil, client.CreateError(codes.Internal,
+			return nil, client.RegisterError(codes.Internal,
 				`failed to convert message kind: "%s"`, err)
 		}
 	}
 
-	posts := client.service.GetAu10().GetPosts()
-	err := client.checkRights(posts, "posts")
+	publisher := client.service.GetPublisher()
+	err := client.checkRights(publisher, "publishing")
 	if err != nil {
 		return nil, err
 	}
 
 	var result au10.Vocal
-	result, err = posts.AddVocal(messagesRequest, client.user)
+	result, err = publisher.PublishVocal(messagesRequest, client.user)
 	if err != nil {
-		return nil, client.CreateError(codes.Internal, `failed to add: "%s"`, err)
+		return nil, client.RegisterError(codes.Internal, `failed to add: "%s"`, err)
 	}
 
 	response := convertVocalToProto(result, &err)
 	if err != nil {
-		return nil, client.CreateError(codes.Internal,
+		return nil, client.RegisterError(codes.Internal,
 			`failed to convert vocal: "%s"`, err)
 	}
 	return response, nil
@@ -206,7 +206,7 @@ func (client *client) WriteMessageChunk(
 		return nil, err
 	}
 	if err = message.Append(request.Chunk); err != nil {
-		return nil, client.CreateError(codes.Internal,
+		return nil, client.RegisterError(codes.Internal,
 			`failed to write chunk "%s"/"%s": "%s"`,
 			request.PostID, request.MessageID, err)
 	}
@@ -219,25 +219,25 @@ func (client *client) getMessage(
 	var err error
 	intPostID := convertIDFromProto(requestPostID, &err)
 	if err != nil {
-		return nil, client.CreateError(codes.InvalidArgument,
+		return nil, client.RegisterError(codes.InvalidArgument,
 			`failed to parse post ID "%s"/"%s": "%s"`,
 			requestPostID, requestMessageID, err)
 	}
 	intMessageID := convertIDFromProto(requestMessageID, &err)
 	if err != nil {
-		return nil, client.CreateError(codes.InvalidArgument,
+		return nil, client.RegisterError(codes.InvalidArgument,
 			`failed to parse message ID "%s"/"%s": "%s"`,
 			requestPostID, requestMessageID, err)
 	}
 
-	posts := client.service.GetAu10().GetPosts()
+	posts := client.service.GetPosts()
 	if err := client.checkRights(posts, "posts"); err != nil {
 		return nil, err
 	}
 
 	var post au10.Post
 	if post, err = posts.GetPost(au10.PostID(intPostID)); err != nil {
-		return nil, client.CreateError(codes.InvalidArgument,
+		return nil, client.RegisterError(codes.InvalidArgument,
 			`failed to get post "%s"/"%s": "%s"`,
 			requestPostID, requestMessageID, err)
 	}
@@ -255,7 +255,7 @@ func (client *client) getMessage(
 		}
 	}
 	if message == nil {
-		return nil, client.CreateError(codes.InvalidArgument,
+		return nil, client.RegisterError(codes.InvalidArgument,
 			`failed to find message "%s"/"%s"`, requestPostID, requestMessageID)
 	}
 	err = client.checkRights(message, `message "%s"/"%s"`,
@@ -271,7 +271,7 @@ func (client *client) checkRights(
 	format string,
 	args ...interface{}) error {
 	if !entity.GetMembership().IsAllowed(client.user.GetRights()) {
-		return client.CreateError(codes.PermissionDenied,
+		return client.RegisterError(codes.PermissionDenied,
 			"Permission denied for "+format, args...)
 	}
 	return nil
@@ -279,10 +279,8 @@ func (client *client) checkRights(
 
 func (client *client) GetAllowedMethods() *proto.AuthResponse_AllowedMethods {
 	rights := client.user.GetRights()
-	au10 := client.service.GetAu10()
-	arePostsAvailable := au10.GetPosts().GetMembership().IsAllowed(rights)
 	return &proto.AuthResponse_AllowedMethods{
-		ReadLog:   au10.Log().GetMembership().IsAllowed(rights),
-		ReadPosts: arePostsAvailable,
-		AddVocal:  arePostsAvailable}
+		ReadLog:   client.service.Log().GetMembership().IsAllowed(rights),
+		ReadPosts: client.service.GetPosts().GetMembership().IsAllowed(rights),
+		AddVocal:  client.service.GetPublisher().GetMembership().IsAllowed(rights)}
 }

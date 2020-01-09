@@ -1,16 +1,13 @@
 package au10
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Shopify/sarama"
 )
 
-// PostsStreamTopic is a name of posts stream topic.
-const PostsStreamTopic = "posts"
-
-// Posts describes post collection service.
+// Posts describes post database service.
 type Posts interface {
 	Member
 
@@ -20,11 +17,6 @@ type Posts interface {
 	// GetPost returns post by ID.
 	GetPost(PostID) (Post, error)
 
-	// AddVocal adds new vocal, but doesn't publishes it.
-	AddVocal([]MessageDeclaration, User) (Vocal, error)
-
-	// InitSubscriptionService initiates subscriber to read posts in the feature.
-	InitSubscriptionService() error
 	// Subscribe creates a subscription to posts.
 	Subscribe() (PostsSubscription, error)
 }
@@ -36,19 +28,30 @@ type PostsSubscription interface {
 	GetRecordsChan() <-chan Post
 }
 
-func (*factory) CreatePosts(service Service) Posts {
+////////////////////////////////////////////////////////////////////////////////
+
+// NewPosts creates new posts service instance.
+func NewPosts(service Service) Posts {
 	return &posts{
-		service:    service,
-		membership: CreateMembership("", "")}
+		membership: NewMembership("", ""),
+		stream: service.GetFactory().NewStreamReader(
+			[]string{postsStreamTopic},
+			func(source *sarama.ConsumerMessage) (interface{}, error) {
+				return ConvertSaramaMessageIntoPost(source)
+			},
+			service)}
 }
+
+const postsStreamTopic = "posts"
 
 type posts struct {
-	service    Service
 	membership Membership
-	reader     StreamReader
+	stream     StreamReader
 }
 
-func (*posts) Close() {}
+func (posts *posts) Close() {
+	posts.stream.Close()
+}
 
 func (posts *posts) GetMembership() Membership { return posts.membership }
 
@@ -56,35 +59,65 @@ func (posts *posts) GetPost(id PostID) (Post, error) {
 	return nil, fmt.Errorf("post with ID %d is nonexistent", id)
 }
 
-func (*posts) AddVocal(
-	messages []MessageDeclaration, user User) (Vocal, error) {
-
-	return nil, errors.New("not implemented")
-}
-
-func (posts *posts) InitSubscriptionService() error {
-	if posts.reader != nil {
-		return errors.New("posts subscription service already initiated")
-	}
-	posts.reader = posts.service.GetFactory().CreateStreamReader(
-		[]string{PostsStreamTopic},
-		func(source *sarama.ConsumerMessage) (interface{}, error) {
-			return ConvertSaramaMessageIntoPost(source)
-		},
-		posts.service)
-	return nil
-}
-
 func (posts *posts) Subscribe() (PostsSubscription, error) {
-	if posts.reader == nil {
-		panic("posts subscription service not initialized")
-	}
-	return nil, errors.New("not implemented")
+	return newPostsSubscription(posts, posts.stream)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+type postsSubscription struct {
+	subscription
+	stream    StreamSubscription
+	postsChan chan Post
+}
+
+func newPostsSubscription(
+	posts *posts,
+	reader StreamReader) (PostsSubscription, error) {
+
+	result := &postsSubscription{
+		subscription: newSubscription(),
+		postsChan:    make(chan Post, 1)}
+
+	var err error
+	result.stream, err = reader.NewSubscription(
+		func(message interface{}) { result.postsChan <- message.(Post) },
+		result.errChan)
+	if err != nil {
+		result.Close()
+		return nil, err
+	}
+	return result, nil
+}
+
+func (subscription *postsSubscription) Close() {
+	if subscription.stream != nil {
+		subscription.stream.Close()
+	}
+	close(subscription.postsChan)
+	subscription.subscription.close()
+}
+
+func (subscription *postsSubscription) GetRecordsChan() <-chan Post {
+	return subscription.postsChan
+}
+
+func (subscription *postsSubscription) GetErrChan() <-chan error {
+	return subscription.errChan
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 // ConvertSaramaMessageIntoPost creates new Post-object from stream data.
 func ConvertSaramaMessageIntoPost(
 	source *sarama.ConsumerMessage) (Post, error) {
-
-	return nil, fmt.Errorf("not implemented")
+	result := &post{
+		membership: NewMembership("", ""),
+		message:    source}
+	if err := json.Unmarshal(source.Value, &result.data); err != nil {
+		return nil, fmt.Errorf(`failed to parse post-record: "%s"`, err)
+	}
+	return result, nil
 }
+
+////////////////////////////////////////////////////////////////////////////////

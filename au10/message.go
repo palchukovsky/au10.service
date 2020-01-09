@@ -1,5 +1,7 @@
 package au10
 
+import "errors"
+
 // MessageID is message ID.
 type MessageID uint64
 
@@ -32,4 +34,34 @@ type Message interface {
 	// for the last chunk, if the last chunk has the smaller size than the passed
 	// buffer.
 	Load(buffer *[]byte, offset uint64) error
+}
+
+// NewMessage create messag object instance.
+func NewMessage(data *MessageData, post Post) Message {
+	return &message{data: data, post: post}
+}
+
+// MessageData describes message record in a stream.
+type MessageData struct {
+	ID   MessageID   `json:"i"`
+	Kind MessageKind `json:"k"`
+	Size uint64      `json:"s"`
+}
+
+type message struct {
+	data *MessageData
+	post Post
+}
+
+func (message *message) GetMembership() Membership {
+	return message.post.GetMembership()
+}
+func (message *message) GetID() MessageID     { return message.data.ID }
+func (message *message) GetKind() MessageKind { return message.data.Kind }
+func (message *message) GetSize() uint64      { return message.data.Size }
+func (message *message) Append([]byte) error {
+	return errors.New("not implemented")
+}
+func (message *message) Load(buffer *[]byte, offset uint64) error {
+	return errors.New("not implemented")
 }

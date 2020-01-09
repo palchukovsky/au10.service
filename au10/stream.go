@@ -2,8 +2,8 @@ package au10
 
 import "github.com/Shopify/sarama"
 
-// CreateStreamConfig creates Sarama config object.
-func CreateStreamConfig(service Service) *sarama.Config {
+// NewStreamConfig creates Sarama config object.
+func NewStreamConfig(service Service) *sarama.Config {
 	result := sarama.NewConfig()
 	result.ClientID = service.GetNodeType() + "." + service.GetNodeName()
 	result.Version = sarama.V2_3_0_0
@@ -11,17 +11,17 @@ func CreateStreamConfig(service Service) *sarama.Config {
 	return result
 }
 
-func (*factory) CreateSaramaProducer(
+func (*factory) NewSaramaProducer(
 	service Service) (sarama.AsyncProducer, error) {
 
 	return sarama.NewAsyncProducer(
-		service.GetStreamBrokers(), CreateStreamConfig(service))
+		service.GetStreamBrokers(), NewStreamConfig(service))
 }
 
-func (*factory) CreateSaramaConsumer(
+func (*factory) NewSaramaConsumer(
 	service Service) (sarama.ConsumerGroup, error) {
 
-	config := CreateStreamConfig(service)
+	config := NewStreamConfig(service)
 	return sarama.NewConsumerGroup(
 		service.GetStreamBrokers(), config.ClientID, config)
 }

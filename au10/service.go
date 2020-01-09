@@ -26,16 +26,6 @@ type Service interface {
 
 	// GetFactory returns default objects factory.
 	GetFactory() Factory
-
-	// InitUsers inits users service to use it in the feature.
-	InitUsers() error
-	// GetUsers returns users service.
-	GetUsers() Users
-
-	// InitPosts inits posts service to use it in the feature.
-	InitPosts() error
-	// GetPosts returns posts service.
-	GetPosts() Posts
 }
 
 // DialOrPanic creates a new connection to Au10 service or panics with error
@@ -59,7 +49,7 @@ func DialOrPanic(
 			err, streamBrokers)
 		if confErr == nil && i < 5 {
 			log.Println(logRecord)
-			time.Sleep(factory.CreateRedialSleepTime())
+			time.Sleep(factory.NewRedialSleepTime())
 		} else {
 			log.Printf(logRecord)
 			panic(logRecord)
@@ -88,9 +78,8 @@ func Dial(
 		streamBrokers: streamBrokers}
 
 	var err error
-	result.log, err = result.factory.CreateLog(result)
+	result.log, err = result.factory.NewLog(result)
 	if err != nil {
-		result.Close()
 		return nil, nil, fmt.Errorf(`failed to open service log: "%s"`, err)
 	}
 
@@ -106,20 +95,10 @@ type service struct {
 	factory       Factory
 	streamBrokers []string
 	log           Log
-	users         Users
-	posts         Posts
 }
 
 func (service *service) Close() {
-	if service.posts != nil {
-		service.posts.Close()
-	}
-	if service.users != nil {
-		service.users.Close()
-	}
-	if service.log != nil {
-		service.log.Close()
-	}
+	service.log.Close()
 }
 
 func (service *service) GetNodeType() string { return service.nodeType }
@@ -128,38 +107,4 @@ func (service *service) Log() Log            { return service.log }
 func (service *service) GetFactory() Factory { return service.factory }
 func (service *service) GetStreamBrokers() []string {
 	return service.streamBrokers
-}
-
-func (service *service) InitUsers() error {
-	if service.users != nil {
-		return errors.New("users service already initiated")
-	}
-	var err error
-	service.users, err = service.factory.CreateUsers(service.factory)
-	if err != nil {
-		return fmt.Errorf(`failed to create users service: "%s"`, err)
-	}
-	return nil
-}
-
-func (service *service) GetUsers() Users {
-	if service.users == nil {
-		panic("users service not initialized")
-	}
-	return service.users
-}
-
-func (service *service) InitPosts() error {
-	if service.posts != nil {
-		return errors.New("posts service already initiated")
-	}
-	service.posts = service.factory.CreatePosts(service)
-	return nil
-}
-
-func (service *service) GetPosts() Posts {
-	if service.posts == nil {
-		panic("posts service not initialized")
-	}
-	return service.posts
 }

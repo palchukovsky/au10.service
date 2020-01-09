@@ -11,7 +11,7 @@ import (
 func Test_Au10_Factory(test *testing.T) {
 	assert := assert.New(test)
 
-	factory := au10.CreateFactory()
+	factory := au10.NewFactory()
 
-	assert.Equal(3*time.Second, factory.CreateRedialSleepTime())
+	assert.Equal(3*time.Second, factory.NewRedialSleepTime())
 }
