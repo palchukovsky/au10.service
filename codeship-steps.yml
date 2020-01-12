@@ -1,0 +1,17 @@
+- name: Build builder
+  tag: builder
+  service: make
+  command: make build-builder TAG=${CI_BRANCH} COMMIT=${CI_REPO_NAME}/${CI_COMMIT_ID} BUILD=${CI_BUILD_ID} MAINTAINER=${CI_COMMITTER_NAME}<${CI_COMMITTER_EMAIL}>
+
+- name: Build application
+  service: make
+  command: make build TAG=${CI_BRANCH} COMMIT=${CI_REPO_NAME}/${CI_COMMIT_ID} BUILD=${CI_BUILD_ID} MAINTAINER=${CI_COMMITTER_NAME}<${CI_COMMITTER_EMAIL}>
+
+- name: Code coverage
+  service: make
+  command: make codecov
+
+- name: Release
+  tag: master
+  service: make
+  command: make release TAG=${CI_BRANCH}

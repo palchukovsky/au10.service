@@ -12,5 +12,5 @@ WORKDIR /go/src/bitbucket.org/au10/service
 COPY . .
 COPY --from=protoc /compiler/accesspoint/proto/ ./accesspoint/proto/
 RUN export CGO_ENABLED=0 && \
-  make mock && go test -timeout 15s -v ./... && \
+  make mock && go test -timeout 15s -v -coverprofile=coverage.txt -covermode=atomic ./... && \
   cd ./accesspoint && go build -o /go/bin/ && cd -

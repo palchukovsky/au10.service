@@ -4,3 +4,4 @@ debug
 debug.test
 __debug_bin
 /.vscode/launch.json
+coverage.txt

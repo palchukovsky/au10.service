@@ -15,22 +15,22 @@ services:
     image: wurstmeister/zookeeper:3.4.6
 
   accesspoint-1:
-    image: registry.gitlab.com/au10/service.accesspoint:dev-latest
+    image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
     command: -name 1 -port 2917 -stream_brokers stream-broker:9092
   accesspoint-2:
-    image: registry.gitlab.com/au10/service.accesspoint:dev-latest
+    image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
     command: -name 2 -port 2917 -stream_brokers stream-broker:9092
   accesspoint-3:
-    image: registry.gitlab.com/au10/service.accesspoint:dev-latest
+    image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
     command: -name 3 -port 2917 -stream_brokers stream-broker:9092
   accesspoint-proxy:
-    image: registry.gitlab.com/au10/service.accesspoint-proxy:dev-latest
+    image: registry.gitlab.com/au10/service.accesspoint-proxy:master
     depends_on:
       - accesspoint-1
       - accesspoint-2

@@ -1,8 +1,11 @@
-TAG = dev-latest
+TAG := dev
 ORGANIZATION = au10
 PRODUCT = service
 CODE_REPO = bitbucket.org/au10/service
 IMAGES_REPO = registry.gitlab.com/$(ORGANIZATION)/
+MAINTAINER = local
+COMMIT = local
+BUILD = local
 
 GO_VER = 1.13
 PROTOC_VERSION = 3.11.1
@@ -10,38 +13,52 @@ NODE_OS_NAME = alpine
 NODE_OS_TAG = 3.10
 ENVOY_TAG = v1.12.2
 
+.PHONY: help \
+	install install-protoc install-mock install-mock-deps \
+	stub \
+	mock \
+	build \
+		build-full \
+		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
+		build-accesspoint build-accesspoint-proxy \
+	codecov
+
 GO_GET_CMD = go get -v
 
-IMAGE_TAG_PROTOC = $(IMAGES_REPO)protoc:$(PROTOC_VERSION)
-IMAGE_TAG_GOLANG = $(IMAGES_REPO)$(PRODUCT).golang:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
-IMAGE_TAG_ENVOY = $(IMAGES_REPO)envoy:${ENVOY_TAG}
-IMAGE_TAG_ACCESSPOINT = $(IMAGES_REPO)$(PRODUCT).accesspoint:$(TAG)
-IMAGE_TAG_ACCESSPOINT_PROXY = $(IMAGES_REPO)$(PRODUCT).accesspoint-proxy:$(TAG)
-
-THIS_FILE := $(lastword $(MAKEFILE_LIST))
+IMAGE_TAG := $(subst /,_,${TAG})
+THIS_FILE := $(lastword ${MAKEFILE_LIST})
 COMMA := ,
+
+IMAGE_TAG_PROTOC = ${IMAGES_REPO}protoc:$(PROTOC_VERSION)
+IMAGE_TAG_GOLANG = ${IMAGES_REPO}${PRODUCT}.golang:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
+IMAGE_TAG_BUILDER = ${IMAGES_REPO}${PRODUCT}.builder:${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG}
+IMAGE_TAG_ENVOY = ${IMAGES_REPO}envoy:${ENVOY_TAG}
+IMAGE_TAG_ACCESSPOINT = ${IMAGES_REPO}${PRODUCT}.accesspoint:${IMAGE_TAG}
+IMAGE_TAG_ACCESSPOINT_PROXY = ${IMAGES_REPO}${PRODUCT}.accesspoint-proxy:${IMAGE_TAG}
 
 .DEFAULT_GOAL := help
 
-
 define build_docker_builder_image
-	$(eval BUILDER_SOURCE_TAG = ${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG})
-	$(eval BUILDER_TAG = $(IMAGES_REPO)$(PRODUCT).builder:$(BUILDER_SOURCE_TAG))
-	docker build \
+	docker build --file "${CURDIR}/build/builder/builder.Dockerfile" \
 		--network none \
-		--build-arg PROTOC=$(IMAGE_TAG_PROTOC) \
-		--build-arg GOLANG=$(IMAGE_TAG_GOLANG) \
-		--file "$(CURDIR)/build/builder/builder.Dockerfile" \
-		--tag $(BUILDER_TAG) \
+		--build-arg PROTOC=${IMAGE_TAG_PROTOC} \
+		--build-arg GOLANG=${IMAGE_TAG_GOLANG} \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
+		--tag ${IMAGE_TAG_BUILDER} \
 		./
+	$(eval BUILDER_BUILT := 1)
 endef
 define build_docker_cmd_image
-	$(if $(BUILDER_TAG),, $(call build_docker_builder_image))
-	docker build \
-		--build-arg NODE_OS_NAME=$(NODE_OS_NAME) \
-		--build-arg NODE_OS_TAG=$(NODE_OS_TAG) \
-		--build-arg BUILDER=$(BUILDER_TAG) \
-		--file "$(CURDIR)/$(1)/Dockerfile" \
+	$(if $(BUILDER_BUILT),, $(call build_docker_builder_image))
+	docker build --file "${CURDIR}/$(1)/Dockerfile" \
+		--build-arg NODE_OS_NAME=${NODE_OS_NAME} \
+		--build-arg NODE_OS_TAG=${NODE_OS_TAG} \
+		--build-arg BUILDER=${IMAGE_TAG_BUILDER} \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
 		--tag $(2) \
 		./
 endef
@@ -70,25 +87,15 @@ define echo_success
 endef
 
 
-.PHONY: help \
-	install install-protoc install-mock install-mock-deps \
-	stub \
-	mock \
-	build\
-		build-full \
-		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
-		build-accesspoint build-accesspoint-proxy
-
-
 help: ## Show this help.
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "};	{printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' ${MAKEFILE_LIST} | sort | awk 'BEGIN {FS = ":.*?## "};	{printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 
 install: ## Install package and all dependencies.
 	$(call make_target,install-protoc)
 	$(call make_target,stub)
 
-	$(GO_GET_CMD) ./...
+	${GO_GET_CMD} ./...
 
 	$(call make_target,install-mock)
 
@@ -97,9 +104,9 @@ install: ## Install package and all dependencies.
 	@$(call echo_success)
 
 install-protoc: ## Install proto compilator.
-	$(GO_GET_CMD) github.com/palchukovsky/protoc-install
+	${GO_GET_CMD} github.com/palchukovsky/protoc-install
 	protoc-install -type cli -ver $(PROTOC_VERSION) -out ./build/bin
-	$(GO_GET_CMD) github.com/golang/protobuf/protoc-gen-go
+	${GO_GET_CMD} github.com/golang/protobuf/protoc-gen-go
 	@$(call echo_success)
 
 install-mock: ## Install mock compilator and generate mock.
@@ -107,9 +114,9 @@ install-mock: ## Install mock compilator and generate mock.
 	$(call make_target,mock)
 	@$(call echo_success)
 install-mock-deps: ## Install mock compilator components.
-	$(GO_GET_CMD) github.com/stretchr/testify/assert
-	$(GO_GET_CMD) github.com/golang/mock/gomock
-	$(GO_GET_CMD) github.com/golang/mock/mockgen
+	${GO_GET_CMD} github.com/stretchr/testify/assert
+	${GO_GET_CMD} github.com/golang/mock/gomock
+	${GO_GET_CMD} github.com/golang/mock/mockgen
 	@$(call echo_success)
 
 stub: ## Generate stubs.
@@ -162,7 +169,13 @@ build-accesspoint: ## Build access point node docker image from actual local sou
 	$(call build_docker_cmd_image,accesspoint,$(IMAGE_TAG_ACCESSPOINT))
 	@$(call echo_success)
 build-accesspoint-proxy: ## Build access point proxy node docker image from actual local sources.
-	docker build --build-arg ENVOY=$(IMAGE_TAG_ENVOY) --file "./accesspoint/proxy/Dockerfile" --tag $(IMAGE_TAG_ACCESSPOINT_PROXY) ./
+	docker build --file "./accesspoint/proxy/Dockerfile" \
+		--build-arg ENVOY=$(IMAGE_TAG_ENVOY) \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
+		--tag $(IMAGE_TAG_ACCESSPOINT_PROXY) \
+		./
 	@$(call echo_success)
 
 build-builder: ## Build all docker images for builder.
@@ -171,20 +184,46 @@ build-builder: ## Build all docker images for builder.
 	$(call make_target,build-builder-envoy)
 	@$(call echo_success)
 build-builder-protoc: ## Build docker protoc-image.
-	docker build --file "./build/builder/protoc.Dockerfile" --tag $(IMAGE_TAG_PROTOC)  ./
+	docker build --file "./build/builder/protoc.Dockerfile" \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
+		--tag ${IMAGE_TAG_PROTOC} \
+		./
 	@$(call echo_success)
 build-builder-golang: ## Build docker golang base node image.
-	docker build --file "./build/builder/golang.Dockerfile" --build-arg GOLANG_TAG=${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG} --tag $(IMAGE_TAG_GOLANG)  ./
+	docker build --file "./build/builder/golang.Dockerfile" \
+		--build-arg GOLANG_TAG=${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG} \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
+		--tag ${IMAGE_TAG_GOLANG} \
+		./
 	@$(call echo_success)
 build-builder-envoy: ## Build docker envoy base image.
-	docker build --file "./accesspoint/proxy/envoy.Dockerfile" --build-arg TAG=${ENVOY_TAG} --tag $(IMAGE_TAG_ENVOY)  ./
+	docker build --file "./accesspoint/proxy/envoy.Dockerfile" \
+		--build-arg TAG=${ENVOY_TAG} \
+		--label "Maintainer=${MAINTAINER}" \
+		--label "Commit=${COMMIT}" \
+		--label "Build=${BUILD}" \
+		--tag $(IMAGE_TAG_ENVOY) \
+		./
 	@$(call echo_success)
 
 release: ## Push all images on the hub.
 	docker push $(IMAGE_TAG_ENVOY)
 	docker push $(IMAGE_TAG_ACCESSPOINT)
 	docker push $(IMAGE_TAG_ACCESSPOINT_PROXY)
-	docker push $(IMAGE_TAG_PROTOC)
-	docker push $(IMAGE_TAG_GOLANG)
+	docker push ${IMAGE_TAG_PROTOC}
+	docker push ${IMAGE_TAG_GOLANG}
 	@$(call echo_success)
 
+codecov: ## Upload actual code coverage information on codecov.io.
+	$(eval CONTAINER := $(shell docker create ${IMAGE_TAG_BUILDER}))
+	docker cp \
+			${CONTAINER}:/go/src/bitbucket.org/au10/service/coverage.txt \
+			./coverage.txt
+	docker rm ${CONTAINER}
+	curl -X POST --data-binary @codecov.yml https://codecov.io/validate
+	curl -s https://codecov.io/bash | bash
+	@$(call echo_success)

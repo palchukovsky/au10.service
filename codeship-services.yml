@@ -1,0 +1,5 @@
+make:
+  add_docker: true
+  build:
+    image: make
+    dockerfile: build/builder/codeship.Dockerfile
