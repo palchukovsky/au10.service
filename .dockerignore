@@ -1,5 +1,4 @@
 .vscode
 mock
-cli
 builder/bin
 coverage.txt

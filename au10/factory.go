@@ -15,13 +15,22 @@ type Factory interface {
 		convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 		service Service) StreamReader
 	NewStreamWriter(topic string, service Service) (StreamWriter, error)
+	NewStreamWriterWithResult(
+		topic string,
+		service Service) (StreamWriterWithResult, error)
 
 	NewLog(service Service) (Log, error)
 
-	NewUser(login string, membership Membership, rights []Rights) (User, error)
+	NewUser(
+		id UserID,
+		login string,
+		membership Membership,
+		rights []Rights) (User, error)
 
-	NewSaramaProducer(service Service) (sarama.AsyncProducer, error)
-	NewSaramaConsumer(service Service) (sarama.ConsumerGroup, error)
+	NewSaramaProducer(
+		service Service,
+		enableSuccess bool) (sarama.AsyncProducer, error)
+	NewSaramaConsumer(Service) (sarama.ConsumerGroup, error)
 }
 
 // NewFactory creates an instance of Factory interface.

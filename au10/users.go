@@ -21,12 +21,12 @@ type Users interface {
 func NewUsers(factory Factory) (Users, error) {
 	result := &users{users: map[string]User{}}
 	var err error
-	result.newUser("root", "", "", []Rights{NewRights("*", "*")}, factory, &err)
-	result.newUser("domain_root", "x-company", "", []Rights{NewRights("x-company", "*")}, factory, &err)
-	result.newUser("domain_admin", "x-company", "admins",
+	result.newUser(123, "root", "", "", []Rights{NewRights("*", "*")}, factory, &err)
+	result.newUser(234, "domain_root", "x-company", "", []Rights{NewRights("x-company", "*")}, factory, &err)
+	result.newUser(345, "domain_admin", "x-company", "admins",
 		[]Rights{NewRights("x-company", "users"), NewRights("x-company", "admins")}, factory, &err)
-	result.newUser("user1", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
-	result.newUser("user2", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
+	result.newUser(456, "user1", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
+	result.newUser(567, "user2", "x-company", "users", []Rights{NewRights("x-company", "users")}, factory, &err)
 	if err != nil {
 		return nil, err
 	}
@@ -78,13 +78,16 @@ func (users *users) FindSession(token string) (User, error) {
 }
 
 func (users *users) newUser(
-	login, domain, group string, rights []Rights, factory Factory, err *error) {
+	id UserID,
+	login, domain, group string,
+	rights []Rights,
+	factory Factory,
+	err *error) {
 	if *err != nil {
 		return
 	}
 	var user User
-	user, *err = factory.NewUser(
-		login, NewMembership(domain, group), rights)
+	user, *err = factory.NewUser(id, login, NewMembership(domain, group), rights)
 	if *err != nil {
 		return
 	}

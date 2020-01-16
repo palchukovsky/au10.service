@@ -36,7 +36,7 @@ func Test_Au10_StreamWriter_NewSaramaProducer(test *testing.T) {
 	service.EXPECT().GetNodeName().Return("test node name")
 	service.EXPECT().GetStreamBrokers().Return([]string{})
 
-	producer, err := au10.NewFactory().NewSaramaProducer(service)
+	producer, err := au10.NewFactory().NewSaramaProducer(service, false)
 	assert.Nil(producer)
 	assert.NotNil(err)
 }

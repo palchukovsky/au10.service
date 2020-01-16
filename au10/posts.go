@@ -111,9 +111,7 @@ func (subscription *postsSubscription) GetErrChan() <-chan error {
 // ConvertSaramaMessageIntoPost creates new Post-object from stream data.
 func ConvertSaramaMessageIntoPost(
 	source *sarama.ConsumerMessage) (Post, error) {
-	result := &post{
-		membership: NewMembership("", ""),
-		message:    source}
+	result := &post{membership: NewMembership("", "")}
 	if err := json.Unmarshal(source.Value, &result.data); err != nil {
 		return nil, fmt.Errorf(`failed to parse post-record: "%s"`, err)
 	}

@@ -41,31 +41,31 @@ func Test_Au10_Log(test *testing.T) {
 
 	assert.Equal(au10.Group{Domain: "", Name: ""}, log.GetMembership().Get())
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 0,
 		Text:     `test log debug record`}).Return(nil)
 	log.Debug("test log %s record", "debug")
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 1,
 		Text:     `test log info record`}).Return(nil)
 	log.Info("test log %s record", "info")
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 2,
 		Text:     `test log warn record`}).Return(nil)
 	log.Warn("test log %s record", "warn")
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 3,
 		Text:     "test log error record"}).Return(nil)
 	log.Error("test log %s record", "error")
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 4,
 		Text:     "test log panic record"}).Return(nil)
@@ -73,7 +73,7 @@ func Test_Au10_Log(test *testing.T) {
 		log.Fatal("test log %s record", "panic")
 	})
 
-	writer.EXPECT().Push(au10.LogRecordData{
+	writer.EXPECT().PushAsync(au10.LogRecordData{
 		Node:     "test node name",
 		Severity: 3,
 		Text:     "test log error record 2"}).Return(errors.New("test error"))

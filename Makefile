@@ -119,41 +119,6 @@ install-mock-deps: ## Install mock compilator components.
 	${GO_GET_CMD} github.com/golang/mock/mockgen
 	@$(call echo_success)
 
-stub: ## Generate stubs.
-	-cd ./accesspoint/ && mkdir proto
-	./build/bin/protoc -I ./accesspoint/ ./accesspoint/accesspoint.proto  --go_out=plugins=grpc:./accesspoint/proto/
-	@$(call echo_success)
-
-
-mock: ## Generate mock interfaces for unit-tests.
-# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
-	-go list -e -compiled=true -test=true ./*
-	$(call gen_mock,au10/factory,Factory)
-	$(call gen_mock,au10/service,Service)
-	$(call gen_mock,au10/streamreader,StreamReader)
-	$(call gen_mock,au10/streamwriter,StreamWriter)
-	$(call gen_mock_aux,au10/log,Log LogReader LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
-	$(call gen_mock,au10/member,Memeber)
-	$(call gen_mock,au10/group,Rights Membership)
-	$(call gen_mock_aux,au10/user,User,$(CODE_REPO)/au10=au10/member.go)
-	$(call gen_mock,au10/users,Users)
-	$(call gen_mock_aux,au10/post,Post Vocal,$(CODE_REPO)/au10=au10/member.go)
-	$(call gen_mock_aux,au10/posts,Posts PostsSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
-	$(call gen_mock_aux,au10/publisher,Publisher,$(CODE_REPO)/au10=au10/member.go)
-	$(call gen_mock_aux,au10/message,Message,$(CODE_REPO)/au10=au10/member.go)
-
-# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
-	-go list -e -compiled=true -test=true ./accesspoint/lib/*
-	$(call gen_mock,accesspoint/lib/service,Service)
-	$(call gen_mock,accesspoint/lib/client,Client)
-	$(call gen_mock,accesspoint/lib/grpc,Grpc)
-	$(call gen_mock_ext,$(CODE_REPO)/accesspoint/proto,Au10_ReadLogServer$(COMMA)Au10_ReadPostsServer$(COMMA)Au10_ReadMessageServer,proto)
-
-	$(call gen_mock_ext,context,Context,context)
-	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
-
-	@$(call echo_success)
-
 
 build-full: ## Build all docker images from actual local sources.
 	$(call make_target,build-builder)
@@ -210,6 +175,7 @@ build-builder-envoy: ## Build docker envoy base image.
 		./
 	@$(call echo_success)
 
+
 release: ## Push all images on the hub.
 	docker push $(IMAGE_TAG_ENVOY)
 	docker push $(IMAGE_TAG_ACCESSPOINT)
@@ -217,6 +183,7 @@ release: ## Push all images on the hub.
 	docker push ${IMAGE_TAG_PROTOC}
 	docker push ${IMAGE_TAG_GOLANG}
 	@$(call echo_success)
+
 
 codecov: ## Upload actual code coverage information on codecov.io.
 	$(eval CONTAINER := $(shell docker create ${IMAGE_TAG_BUILDER}))
@@ -226,4 +193,40 @@ codecov: ## Upload actual code coverage information on codecov.io.
 	docker rm ${CONTAINER}
 	curl -X POST --data-binary @codecov.yml https://codecov.io/validate
 	curl -s https://codecov.io/bash | bash
+	@$(call echo_success)
+
+
+stub: ## Generate stubs.
+	-cd ./accesspoint/ && mkdir proto
+	./build/bin/protoc -I ./accesspoint/ ./accesspoint/accesspoint.proto  --go_out=plugins=grpc:./accesspoint/proto/
+	@$(call echo_success)
+
+
+mock: ## Generate mock interfaces for unit-tests.
+# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
+	-go list -e -compiled=true -test=true ./*
+	$(call gen_mock,au10/factory,Factory)
+	$(call gen_mock,au10/service,Service)
+	$(call gen_mock,au10/streamreader,StreamReader)
+	$(call gen_mock,au10/streamwriter,StreamWriter, StreamWriterWithResult)
+	$(call gen_mock_aux,au10/log,Log LogReader LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock,au10/member,Memeber)
+	$(call gen_mock,au10/group,Rights Membership)
+	$(call gen_mock_aux,au10/user,User,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock,au10/users,Users)
+	$(call gen_mock_aux,au10/post,Post Vocal,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/posts,Posts PostsSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/publisher,Publisher,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock_aux,au10/message,Message,$(CODE_REPO)/au10=au10/member.go)
+
+# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
+	-go list -e -compiled=true -test=true ./accesspoint/lib/*
+	$(call gen_mock,accesspoint/lib/service,Service)
+	$(call gen_mock,accesspoint/lib/client,Client)
+	$(call gen_mock,accesspoint/lib/grpc,Grpc)
+	$(call gen_mock_ext,$(CODE_REPO)/accesspoint/proto,Au10_ReadLogServer$(COMMA)Au10_ReadPostsServer$(COMMA)Au10_ReadMessageServer,proto)
+
+	$(call gen_mock_ext,context,Context,context)
+	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)
+
 	@$(call echo_success)

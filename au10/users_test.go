@@ -59,9 +59,9 @@ func Test_Au10_Users_Error(test *testing.T) {
 	assert := assert.New(test)
 
 	factory := mock_au10.NewMockFactory(mock)
-	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mock_au10.NewMockUser(mock), nil)
-	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("test error"))
 
 	users, err := au10.NewUsers(factory)

@@ -13,10 +13,11 @@ const (
 	MessageKindText MessageKind = 0
 )
 
-// MessageDeclaration gets short information about message.
+// MessageDeclaration describes short information about a post
+// which has to be published.
 type MessageDeclaration struct {
-	Kind MessageKind
-	Size uint64
+	Kind MessageKind `json:"k"`
+	Size uint64      `json:"s"`
 }
 
 // Message describes post message interface.

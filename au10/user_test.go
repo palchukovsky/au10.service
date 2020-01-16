@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"bitbucket.org/au10/service/au10"
-	"bitbucket.org/au10/service/mock/au10"
+	mock_au10 "bitbucket.org/au10/service/mock/au10"
 	"github.com/golang/mock/gomock"
 )
 
@@ -20,13 +20,12 @@ func Test_Au10_User_Fields(test *testing.T) {
 		mock_au10.NewMockRights(ctrl),
 		mock_au10.NewMockRights(ctrl)}
 
-	user, err := au10.NewFactory().NewUser(
-		"test login", membership, rights)
+	user, err := au10.NewFactory().NewUser(123, "test login", membership, rights)
 	assert.NoError(err)
 	assert.NotNil(user)
 
+	assert.Equal(au10.UserID(123), user.GetID())
 	assert.Equal("test login", user.GetLogin())
-
 	assert.True(user.GetMembership() == membership)
 
 	// source could not change object

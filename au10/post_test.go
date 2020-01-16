@@ -19,6 +19,7 @@ func Test_Au10_Post(test *testing.T) {
 			`{
 					"i": 567,
 					"t": 678,
+					"a": 987,
 					"l": {"x": 987.765, "y": 543.123},
 					"m": [
 						{"i": 34, "k": 0, "s": 987},
@@ -29,11 +30,12 @@ func Test_Au10_Post(test *testing.T) {
 	if !assert.NotNil(post) {
 		return
 	}
-	assert.Equal(4,
+	assert.Equal(5,
 		reflect.Indirect(reflect.ValueOf(&au10.PostData{})).NumField())
 
 	assert.Equal(au10.PostID(567), post.GetID())
 	assert.Equal(time.Unix(0, 678), post.GetTime())
+	assert.Equal(au10.UserID(987), post.GetAuthor())
 	assert.Equal(au10.GeoPoint{Latitude: 987.765, Longitude: 543.123},
 		*post.GetLocation())
 

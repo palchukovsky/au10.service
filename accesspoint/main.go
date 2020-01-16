@@ -48,7 +48,7 @@ func main() {
 
 	var defaultUser au10.User
 	defaultUser, err = service.GetFactory().NewUser(
-		"", au10.NewMembership("", ""), []au10.Rights{})
+		0, "", au10.NewMembership("", ""), []au10.Rights{})
 	if err != nil {
 		service.Log().Fatal(`Failed to created default user: "%s".`, err)
 		return

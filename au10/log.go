@@ -33,7 +33,7 @@ type Log interface {
 	Debug(format string, args ...interface{})
 }
 
-// LogReader represents log recordes service service.
+// LogReader represents log records service service.
 type LogReader interface {
 	Member
 
@@ -123,7 +123,7 @@ func (service *logService) publish(
 	severity uint8, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	log.Print(resolveLogSeverity(severity) + ":\t" + message)
-	err := service.stream.Push(LogRecordData{
+	err := service.stream.PushAsync(LogRecordData{
 		Node:     service.service.GetNodeName(),
 		Severity: severity,
 		Text:     message})

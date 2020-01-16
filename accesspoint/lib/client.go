@@ -47,8 +47,8 @@ type client struct {
 }
 
 func (client *client) getLogHeader(format string) string {
-	return fmt.Sprintf("[%s.%d.%s] ",
-		client.request, client.requestID, client.user.GetLogin()) +
+	return fmt.Sprintf("[%s.%d.%d] ",
+		client.request, client.requestID, client.user.GetID()) +
 		format
 }
 func (client *client) LogError(format string, args ...interface{}) {
@@ -116,8 +116,9 @@ func (client *client) Auth(request *proto.AuthRequest) (*string, error) {
 		client.LogInfo(`Wrong creds for "%s"`, request.Login)
 		return nil, nil
 	}
+	prevUser := client.user
 	client.user = user
-	client.LogInfo(`Authed "%s".`, request.Login)
+	client.LogInfo(`Authed "%s" (was %d).`, request.Login, prevUser.GetID())
 	return token, nil
 }
 
@@ -167,26 +168,21 @@ func (client *client) ReadMessage(
 func (client *client) AddVocal(
 	request *proto.VocalAddRequest) (*proto.Vocal, error) {
 
-	messagesRequest := make([]au10.MessageDeclaration, len(request.Post.Messages))
-	for i, m := range request.Post.Messages {
-		var err error
-		messagesRequest[i] = au10.MessageDeclaration{
-			Kind: convertMessageKindFromProto(m.Kind, &err),
-			Size: m.Size}
-		if err != nil {
-			return nil, client.RegisterError(codes.Internal,
-				`failed to convert message kind: "%s"`, err)
-		}
+	var err error
+	vocalRequest := covertVocalDeclarationFromProto(request, client.user, &err)
+	if err != nil {
+		return nil, client.RegisterError(codes.Internal,
+			`failed to convert message kind: "%s"`, err)
 	}
 
 	publisher := client.service.GetPublisher()
-	err := client.checkRights(publisher, "publishing")
+	err = client.checkRights(publisher, "publishing")
 	if err != nil {
 		return nil, err
 	}
 
 	var result au10.Vocal
-	result, err = publisher.PublishVocal(messagesRequest, client.user)
+	result, err = publisher.PublishVocal(vocalRequest)
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal, `failed to add: "%s"`, err)
 	}

@@ -62,8 +62,32 @@ func convertMessagesToProto(
 	return result
 }
 
+func convertMessageDeclarationFromProto(
+	source *proto.PostAddRequest_MessageDeclaration,
+	err *error) *au10.MessageDeclaration {
+	return &au10.MessageDeclaration{
+		Kind: convertMessageKindFromProto(source.Kind, err),
+		Size: source.Size}
+}
+
+func convertMessagesDeclarationFromProto(
+	source []*proto.PostAddRequest_MessageDeclaration,
+	err *error) []*au10.MessageDeclaration {
+	result := make([]*au10.MessageDeclaration, len(source))
+	for i, m := range source {
+		result[i] = convertMessageDeclarationFromProto(m, err)
+		if *err != nil {
+			return nil
+		}
+	}
+	return result
+}
+
 func convertGeoPointToProto(source *au10.GeoPoint) *proto.GeoPoint {
 	return &proto.GeoPoint{Latitude: source.Latitude, Longitude: source.Longitude}
+}
+func convertGeoPointFromProto(source *proto.GeoPoint) *au10.GeoPoint {
+	return &au10.GeoPoint{Latitude: source.Latitude, Longitude: source.Longitude}
 }
 
 func convertPostToProto(source au10.Post, err *error) *proto.Post {
@@ -77,6 +101,17 @@ func convertPostToProto(source au10.Post, err *error) *proto.Post {
 func convertVocalToProto(source au10.Vocal, err *error) *proto.Vocal {
 	return &proto.Vocal{
 		Post: convertPostToProto(source, err)}
+}
+
+func covertVocalDeclarationFromProto(
+	source *proto.VocalAddRequest,
+	user au10.User,
+	err *error) *au10.VocalDeclaration {
+	return &au10.VocalDeclaration{
+		PostDeclaration: au10.PostDeclaration{
+			Author:   user.GetID(),
+			Location: convertGeoPointFromProto(source.Post.Location),
+			Messages: convertMessagesDeclarationFromProto(source.Post.Messages, err)}}
 }
 
 func convertLogRecordToProto(source au10.LogRecord) *proto.LogRecord {
