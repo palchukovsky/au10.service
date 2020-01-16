@@ -2,7 +2,7 @@ TAG := dev
 ORGANIZATION = au10
 PRODUCT = service
 CODE_REPO = bitbucket.org/au10/service
-IMAGES_REPO = registry.gitlab.com/$(ORGANIZATION)/
+IMAGES_REPO = registry.gitlab.com/${ORGANIZATION}/
 MAINTAINER = local
 COMMIT = local
 BUILD = local
@@ -21,6 +21,7 @@ ENVOY_TAG = v1.12.2
 		build-full \
 		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
 		build-accesspoint build-accesspoint-proxy \
+		build-publisher \
 	codecov
 
 GO_GET_CMD = go get -v
@@ -35,6 +36,7 @@ IMAGE_TAG_BUILDER = ${IMAGES_REPO}${PRODUCT}.builder:${GO_VER}-${NODE_OS_NAME}${
 IMAGE_TAG_ENVOY = ${IMAGES_REPO}envoy:${ENVOY_TAG}
 IMAGE_TAG_ACCESSPOINT = ${IMAGES_REPO}${PRODUCT}.accesspoint:${IMAGE_TAG}
 IMAGE_TAG_ACCESSPOINT_PROXY = ${IMAGES_REPO}${PRODUCT}.accesspoint-proxy:${IMAGE_TAG}
+IMAGE_TAG_PUBLISHER = ${IMAGES_REPO}${PRODUCT}.publisher:${IMAGE_TAG}
 
 .DEFAULT_GOAL := help
 
@@ -50,9 +52,10 @@ define build_docker_builder_image
 		./
 	$(eval BUILDER_BUILT := 1)
 endef
-define build_docker_cmd_image
+define build_docker_service_image
 	$(if $(BUILDER_BUILT),, $(call build_docker_builder_image))
-	docker build --file "${CURDIR}/$(1)/Dockerfile" \
+	docker build --file "${CURDIR}/build/builder/service.Dockerfile" \
+		--build-arg SERVICE=$(1) \
 		--build-arg NODE_OS_NAME=${NODE_OS_NAME} \
 		--build-arg NODE_OS_TAG=${NODE_OS_TAG} \
 		--build-arg BUILDER=${IMAGE_TAG_BUILDER} \
@@ -128,19 +131,24 @@ build-full: ## Build all docker images from actual local sources.
 build: ## Build docker images with all project services from actual local sources.
 	$(call make_target,build-accesspoint)
 	$(call make_target,build-accesspoint-proxy)
+	$(call make_target,build-publisher)
 	@$(call echo_success)
 
 build-accesspoint: ## Build access point node docker image from actual local sources.
-	$(call build_docker_cmd_image,accesspoint,$(IMAGE_TAG_ACCESSPOINT))
+	$(call build_docker_service_image,accesspoint,${IMAGE_TAG_ACCESSPOINT})
 	@$(call echo_success)
 build-accesspoint-proxy: ## Build access point proxy node docker image from actual local sources.
 	docker build --file "./accesspoint/proxy/Dockerfile" \
-		--build-arg ENVOY=$(IMAGE_TAG_ENVOY) \
+		--build-arg ENVOY=${IMAGE_TAG_ENVOY} \
 		--label "Maintainer=${MAINTAINER}" \
 		--label "Commit=${COMMIT}" \
 		--label "Build=${BUILD}" \
-		--tag $(IMAGE_TAG_ACCESSPOINT_PROXY) \
+		--tag ${IMAGE_TAG_ACCESSPOINT_PROXY} \
 		./
+	@$(call echo_success)
+
+build-publisher: ## Build publisher node docker image from actual local sources.
+	$(call build_docker_service_image,publisher,${IMAGE_TAG_PUBLISHER})
 	@$(call echo_success)
 
 build-builder: ## Build all docker images for builder.
@@ -171,15 +179,16 @@ build-builder-envoy: ## Build docker envoy base image.
 		--label "Maintainer=${MAINTAINER}" \
 		--label "Commit=${COMMIT}" \
 		--label "Build=${BUILD}" \
-		--tag $(IMAGE_TAG_ENVOY) \
+		--tag ${IMAGE_TAG_ENVOY} \
 		./
 	@$(call echo_success)
 
 
 release: ## Push all images on the hub.
-	docker push $(IMAGE_TAG_ENVOY)
-	docker push $(IMAGE_TAG_ACCESSPOINT)
-	docker push $(IMAGE_TAG_ACCESSPOINT_PROXY)
+	docker push ${IMAGE_TAG_ENVOY}
+	docker push ${IMAGE_TAG_ACCESSPOINT}
+	docker push ${IMAGE_TAG_ACCESSPOINT_PROXY}
+	docker push ${IMAGE_TAG_PUBLISHER}
 	docker push ${IMAGE_TAG_PROTOC}
 	docker push ${IMAGE_TAG_GOLANG}
 	@$(call echo_success)
