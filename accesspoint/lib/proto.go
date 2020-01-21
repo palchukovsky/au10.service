@@ -9,14 +9,14 @@ import (
 	"bitbucket.org/au10/service/au10"
 )
 
-func convertIDFromProto(source string, errResult *error) uint64 {
-	result, err := strconv.ParseUint(source, 10, 64)
+func convertIDFromProto(source string, errResult *error) uint32 {
+	result, err := strconv.ParseUint(source, 10, 32)
 	if err != nil && *errResult == nil {
 		*errResult = err
 	}
-	return result
+	return uint32(result)
 }
-func convertIDToProto(source uint64) string {
+func convertIDToProto(source uint32) string {
 	return strconv.FormatUint(uint64(source), 10)
 }
 
@@ -48,7 +48,7 @@ func convertMessageKindToProto(
 
 func convertMessageToProto(source au10.Message, err *error) *proto.Message {
 	return &proto.Message{
-		Id:   convertIDToProto(uint64(source.GetID())),
+		Id:   convertIDToProto(uint32(source.GetID())),
 		Kind: convertMessageKindToProto(source.GetKind(), err),
 		Size: source.GetSize()}
 }
@@ -92,7 +92,7 @@ func convertGeoPointFromProto(source *proto.GeoPoint) *au10.GeoPoint {
 
 func convertPostToProto(source au10.Post, err *error) *proto.Post {
 	return &proto.Post{
-		Id:       convertIDToProto(uint64(source.GetID())),
+		Id:       convertIDToProto(uint32(source.GetID())),
 		Time:     convertTimeToProto(source.GetTime()),
 		Location: convertGeoPointToProto(source.GetLocation()),
 		Messages: convertMessagesToProto(source.GetMessages(), err)}

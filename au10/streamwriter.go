@@ -48,7 +48,7 @@ func (*factory) NewStreamWriter(
 // and wait for result.
 type StreamWriterWithResult interface {
 	Close()
-	Push(interface{}) (id uint64, timestamp time.Time, err error)
+	Push(interface{}) (id uint32, timestamp time.Time, err error)
 }
 
 func (*factory) NewStreamWriterWithResult(
@@ -110,7 +110,7 @@ func (stream *streamWriter) PushAsync(source interface{}) error {
 }
 
 func (stream *streamWriter) Push(
-	source interface{}) (id uint64, timestamp time.Time, err error) {
+	source interface{}) (id uint32, timestamp time.Time, err error) {
 
 	serialized, err := json.Marshal(source)
 	if err != nil {
@@ -134,6 +134,6 @@ func (stream *streamWriter) Push(
 		if !isOpened {
 			return 0, time.Time{}, errors.New("stream closed")
 		}
-		return uint64(message.Offset), message.Timestamp, nil
+		return uint32(message.Offset), message.Timestamp, nil
 	}
 }

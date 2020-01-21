@@ -104,7 +104,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 
 	// failed to serialize message:
 	wrongMessage := make(chan interface{})
-	var id uint64
+	var id uint32
 	var timestamp time.Time
 	id, timestamp, err = stream.Push(wrongMessage)
 	assert.NotNil(err)
@@ -125,7 +125,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 		Field2 int
 	}{Field1: "test field value", Field2: 543})
 	assert.NoError(err)
-	assert.Equal(uint64(876), id)
+	assert.Equal(uint32(876), id)
 	assert.Equal(now, timestamp)
 	if !assert.NotNil(message) {
 		return
@@ -154,7 +154,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 	producer.EXPECT().Successes().Return(producerSuncessesChan)
 	id, timestamp, err = stream.Push(struct{}{})
 	assert.EqualError(err, "test error")
-	assert.Equal(uint64(0), id)
+	assert.Equal(uint32(0), id)
 	assert.Equal(time.Time{}, timestamp)
 
 	// closed success chan
@@ -167,7 +167,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 	producer.EXPECT().Successes().Return(producerSuncessesChan)
 	id, timestamp, err = stream.Push(struct{}{})
 	assert.EqualError(err, "stream closed")
-	assert.Equal(uint64(0), id)
+	assert.Equal(uint32(0), id)
 	assert.Equal(time.Time{}, timestamp)
 
 	// closed errors chan
@@ -181,7 +181,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 	producer.EXPECT().Successes().Return(producerSuncessesChan)
 	id, timestamp, err = stream.Push(struct{}{})
 	assert.EqualError(err, "stream closed")
-	assert.Equal(uint64(0), id)
+	assert.Equal(uint32(0), id)
 	assert.Equal(time.Time{}, timestamp)
 
 	close(producerSuncessesChan)

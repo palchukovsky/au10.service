@@ -42,13 +42,13 @@ type service struct {
 
 	defaultUser au10.User
 	newClient   func(
-		requestID uint64,
+		requestID uint32,
 		request string,
 		user au10.User,
 		service Service) Client
 	grpc Grpc
 
-	lastRequestID         uint64
+	lastRequestID         uint32
 	numberOfSubscribers   uint32
 	logSubscriptionInfo   *SubscriptionInfo
 	postsSubscriptionInfo *SubscriptionInfo
@@ -64,7 +64,7 @@ func NewAu10Server(
 	users au10.Users,
 	defaultUser au10.User,
 	newClient func(
-		requestID uint64,
+		requestID uint32,
 		request string,
 		user au10.User,
 		service Service) Client,
@@ -211,6 +211,6 @@ func (service *service) newRequestClient(
 		}
 	}
 	return service.newClient(
-			atomic.AddUint64(&service.lastRequestID, 1), request, user, service),
+			atomic.AddUint32(&service.lastRequestID, 1), request, user, service),
 		nil
 }

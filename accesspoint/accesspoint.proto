@@ -32,7 +32,7 @@ message PropsRequest {}
 // Props describes service properties.
 message Props {
   // The maximum number of bytes available for writing to the chunk.
-  uint64 maxChunkSize = 1;
+  uint32 maxChunkSize = 1;
 }
 
 // AuthRequest describes auth request.
@@ -97,7 +97,7 @@ message PostAddRequest {
     // Message kind.
     Message.Kind kind = 1;
     // Message size in bytes.
-    uint64 size = 2;
+    uint32 size = 2;
   }
   // Location of creation.
   GeoPoint location = 1;
@@ -128,7 +128,7 @@ message Message {
   // Kind.
   Kind kind = 2;
   // Size in bytes.
-  uint64 size = 3;
+  uint32 size = 3;
 }
 
 // PostsReadRequest describes post reading request.

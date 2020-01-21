@@ -18,7 +18,6 @@ type SubscriptionInfo struct{ NumberOfSubscribers uint32 }
 
 func (client *client) runLogSubscription(
 	log au10.LogReader, stream proto.Au10_ReadLogServer) error {
-
 	subscription, err := log.Subscribe()
 	if err != nil {
 		return client.RegisterError(codes.Internal, `failed to subscribe: "%s"`, err)

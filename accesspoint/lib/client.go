@@ -30,7 +30,7 @@ type Client interface {
 
 // NewClient creates new Client instance.
 func NewClient(
-	requestID uint64, request string, user au10.User, service Service) Client {
+	requestID uint32, request string, user au10.User, service Service) Client {
 
 	return &client{
 		service:   service,
@@ -41,7 +41,7 @@ func NewClient(
 
 type client struct {
 	service   Service
-	requestID uint64
+	requestID uint32
 	request   string
 	user      au10.User
 }
@@ -150,7 +150,7 @@ func (client *client) ReadMessage(
 	chunkSize := client.service.GetGlobalProps().MaxChunkSize
 	chunk := &proto.MessageChunk{Chunk: make([]byte, chunkSize)}
 	messageSize := message.GetSize()
-	for offset := uint64(0); offset <= messageSize; offset += chunkSize {
+	for offset := uint32(0); offset <= messageSize; offset += chunkSize {
 		if err := message.Load(&chunk.Chunk, offset); err != nil {
 			return client.RegisterError(codes.Internal,
 				`failed to load chunk "%s"/"%s"/%d: "%s"`,
@@ -186,6 +186,7 @@ func (client *client) AddVocal(
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal, `failed to add: "%s"`, err)
 	}
+	client.LogDebug("Vocal %d added.", result.GetID())
 
 	response := convertVocalToProto(result, &err)
 	if err != nil {

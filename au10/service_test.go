@@ -57,7 +57,7 @@ func Test_Au10_Service_DialOrPanic(test *testing.T) {
 	service.Close()
 }
 
-func Test_Au10_Service_Deal(test *testing.T) {
+func Test_Au10_Service_Dial(test *testing.T) {
 	mock := gomock.NewController(test)
 	defer mock.Finish()
 	assert := assert.New(test)

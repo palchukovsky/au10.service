@@ -50,6 +50,25 @@ type Vocal interface {
 	Post
 }
 
+func newVocal(id PostID, time time.Time, decl *VocalDeclaration) Vocal {
+	result := &vocal{
+		post: post{
+			membership: NewMembership("", ""),
+			data: PostData{
+				ID:       PostID(id),
+				Time:     time.UnixNano(),
+				Author:   decl.Author,
+				Location: decl.Location,
+				Messages: make([]*MessageData, len(decl.Messages))}}}
+	for i, m := range decl.Messages {
+		result.data.Messages[i] = &MessageData{
+			ID:   MessageID(i),
+			Kind: m.Kind,
+			Size: m.Size}
+	}
+	return result
+}
+
 type post struct {
 	membership Membership
 	data       PostData

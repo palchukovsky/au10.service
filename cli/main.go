@@ -15,7 +15,7 @@ import (
 var (
 	address = flag.String("address", "localhost:443",
 		"Au10 service access point address")
-	command = flag.String("cmd", "", "command: log, posts")
+	command = flag.String("cmd", "", "command: log, posts, post_vocal")
 	login   = flag.String("login", "", "login")
 )
 
@@ -24,7 +24,7 @@ func main() {
 
 	grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name))
 
-	client := DealOrDie(*address)
+	client := DialOrDie(*address)
 	defer client.Close()
 
 	if *login != "" {
@@ -36,6 +36,8 @@ func main() {
 		client.ReadLog()
 	case "posts":
 		client.ReadPosts()
+	case "post_vocal":
+		client.PostVocal()
 	default:
 		log.Fatalf(`Unknown command: "%s".`, *command)
 	}

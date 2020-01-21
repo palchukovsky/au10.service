@@ -39,7 +39,7 @@ type serviceTest struct {
 func newServiceTest(
 	test *testing.T,
 	newClient func(
-		uint64,
+		uint32,
 		string,
 		au10.User,
 		ap.Service) ap.Client) *serviceTest {
@@ -65,7 +65,7 @@ func newServiceTestObj(test *testing.T) *serviceTest {
 }
 
 func (test *serviceTest) init(
-	newClient func(uint64, string, au10.User, ap.Service) ap.Client) {
+	newClient func(uint32, string, au10.User, ap.Service) ap.Client) {
 	test.service = ap.NewAu10Server(test.props, test.log, test.logReader,
 		test.posts, test.publisher, test.users, test.user, newClient, test.grpc)
 }
@@ -74,7 +74,7 @@ func newServiceMethodTest(test *testing.T, request string) *serviceTest {
 	result := newServiceTestObj(test)
 	result.init(
 		func(
-			requestID uint64,
+			requestID uint32,
 			actualRequest string,
 			user au10.User,
 			service ap.Service) ap.Client {
@@ -91,7 +91,7 @@ func (test *serviceTest) close() {
 func Test_Accesspoint_Service_Methods(t *testing.T) {
 	test := newServiceTestObj(t)
 	defer test.close()
-	test.init(func(uint64, string, au10.User, ap.Service) ap.Client {
+	test.init(func(uint32, string, au10.User, ap.Service) ap.Client {
 		test.assert.True(false)
 		return nil
 	})
@@ -129,10 +129,10 @@ func Test_Accesspoint_Service_Methods(t *testing.T) {
 func Test_Accesspoint_Service_Auth(t *testing.T) {
 	test := newServiceTestObj(t)
 	defer test.close()
-	nextRequestID := uint64(1)
+	nextRequestID := uint32(1)
 	expectedUser := &test.user
 	test.init(func(
-		requestID uint64,
+		requestID uint32,
 		request string,
 		user au10.User,
 		service ap.Service) ap.Client {

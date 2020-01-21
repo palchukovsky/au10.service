@@ -3,11 +3,13 @@ package au10_test
 import (
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
 	"bitbucket.org/au10/service/au10"
 	mock_au10 "bitbucket.org/au10/service/mock/au10"
+	"github.com/Shopify/sarama"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )
@@ -77,7 +79,7 @@ func Test_Au10_Publisher_PublishVocal(test *testing.T) {
 	assert.Equal(2,
 		reflect.Indirect(reflect.ValueOf(&au10.MessageDeclaration{})).NumField())
 
-	writer.EXPECT().Push(vocalDeclaration).Return(uint64(123), now, nil)
+	writer.EXPECT().Push(vocalDeclaration).Return(uint32(123), now, nil)
 	vocal, err := publisher.PublishVocal(vocalDeclaration)
 	assert.NotNil(vocal)
 	assert.NoError(err)
@@ -94,10 +96,127 @@ func Test_Au10_Publisher_PublishVocal(test *testing.T) {
 	}
 
 	writer.EXPECT().Push(vocalDeclaration).
-		Return(uint64(123), now, errors.New("test error"))
+		Return(uint32(123), now, errors.New("test error"))
 	vocal, err = publisher.PublishVocal(vocalDeclaration)
 	assert.Nil(vocal)
 	assert.EqualError(err, "test error")
 
 	publisher.Close()
+}
+
+func Test_Au10_Publisher_PublishStreamSingleton(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
+	assert := assert.New(test)
+
+	factory := mock_au10.NewMockFactory(mock)
+
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	reader := mock_au10.NewMockStreamReader(mock)
+	var convertMessage func(*sarama.ConsumerMessage) (interface{}, error)
+	factory.EXPECT().NewStreamReader([]string{"pubs"}, gomock.Any(), service).
+		Times(2).
+		Do(func(topics []string,
+			convertMessageCallback func(*sarama.ConsumerMessage) (interface{}, error),
+			service au10.Service) {
+			convertMessage = convertMessageCallback
+		}).
+		Return(reader)
+
+	reader.EXPECT().NewSubscription(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("test create subscription error"))
+	reader.EXPECT().Close()
+	stream, err := au10.NewPublishStreamSingleton(service)
+	assert.Nil(stream)
+	assert.EqualError(err, "test create subscription error")
+
+	if !assert.NotNil(convertMessage) {
+		return
+	}
+	now := time.Now()
+	var convertedMessage interface{}
+	convertedMessage, err = convertMessage(&sarama.ConsumerMessage{
+		Key:       []byte("test key"),
+		Value:     []byte(`{`),
+		Offset:    123,
+		Timestamp: now})
+	assert.Nil(convertedMessage)
+	assert.EqualError(err,
+		`failed to parse vocal declaration: "unexpected end of JSON input"`)
+	convertedMessage, err = convertMessage(&sarama.ConsumerMessage{
+		Key: []byte("test key"),
+		Value: []byte(`{
+			"a": 8765,
+			"l": {"x": 234.567, "y": 987.654},
+			"m": [{"k": 0, "s": 678}, {"k": 0, "s": 987}]
+		}`),
+		Offset:    123,
+		Timestamp: now})
+	vocal := convertedMessage.(au10.Vocal)
+	assert.Equal(au10.PostID(123), vocal.GetID())
+	assert.True(now.Equal(vocal.GetTime()))
+	assert.Equal(au10.GeoPoint{Latitude: 234.567, Longitude: 987.654},
+		*vocal.GetLocation())
+	assert.Equal(au10.UserID(8765), vocal.GetAuthor())
+	messages := vocal.GetMessages()
+	if assert.Equal(2, len(messages)) {
+		assert.Equal(au10.MessageID(0), messages[0].GetID())
+		assert.Equal(au10.MessageKindText, messages[0].GetKind())
+		assert.Equal(uint32(678), messages[0].GetSize())
+		assert.Equal(au10.MessageID(1), messages[1].GetID())
+		assert.Equal(au10.MessageKindText, messages[1].GetKind())
+		assert.Equal(uint32(987), messages[1].GetSize())
+	}
+
+	streamSubscription := mock_au10.NewMockStreamSubscription(mock)
+	streamSubscription.EXPECT().Close()
+	var handleSubscription func(interface{})
+	var subscriptionErrChan chan<- error
+	reader.EXPECT().NewSubscription(gomock.Any(), gomock.Any()).
+		Do(func(handle func(interface{}), errChan chan<- error) {
+			handleSubscription = handle
+			subscriptionErrChan = errChan
+		}).
+		Return(streamSubscription, nil)
+	reader.EXPECT().Close()
+	stream, err = au10.NewPublishStreamSingleton(service)
+	if !assert.NotNil(stream) {
+		return
+	}
+	defer stream.Close()
+	assert.NoError(err)
+	if !assert.NotNil(handleSubscription) {
+		return
+	}
+	if !assert.NotNil(subscriptionErrChan) {
+		return
+	}
+
+	messageBarrier := sync.WaitGroup{}
+	messageBarrier.Add(1)
+	stopBarrier := sync.WaitGroup{}
+	stopBarrier.Add(1)
+	go func() {
+		receivedRecord := false
+		for {
+			select {
+			case record := <-stream.GetRecordsChan():
+				assert.Equal(au10.PostID(123), record.GetID())
+				assert.False(receivedRecord)
+				receivedRecord = true
+				messageBarrier.Done()
+			case err := <-stream.GetErrChan():
+				assert.NoError(err)
+				assert.True(receivedRecord)
+				stopBarrier.Done()
+				return
+			}
+		}
+	}()
+	handleSubscription(vocal)
+	messageBarrier.Wait()
+	subscriptionErrChan <- nil
+	stopBarrier.Wait()
 }

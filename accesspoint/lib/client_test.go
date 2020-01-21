@@ -137,18 +137,18 @@ func (test *clientTest) testNumberOfProtoStructFields(
 func (test *clientTest) expectVocalConvertion(
 	secondMessageKind au10.MessageKind) *mock_au10.MockVocal {
 	result := mock_au10.NewMockVocal(test.mock)
-	result.EXPECT().GetID().Return(au10.PostID(987))
+	result.EXPECT().GetID().MinTimes(1).Return(au10.PostID(987))
 	result.EXPECT().GetTime().Return(time.Unix(0, 567))
 	result.EXPECT().GetLocation().Return(
 		&au10.GeoPoint{Latitude: 123.456, Longitude: 456.789})
 	message1 := mock_au10.NewMockMessage(test.mock)
 	message1.EXPECT().GetID().Return(au10.MessageID(890))
 	message1.EXPECT().GetKind().Return(au10.MessageKindText)
-	message1.EXPECT().GetSize().Return(uint64(564))
+	message1.EXPECT().GetSize().Return(uint32(564))
 	message2 := mock_au10.NewMockMessage(test.mock)
 	message2.EXPECT().GetID().Return(au10.MessageID(892))
 	message2.EXPECT().GetKind().Return(secondMessageKind)
-	message2.EXPECT().GetSize().Return(uint64(565))
+	message2.EXPECT().GetSize().Return(uint32(565))
 	result.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
 	return result
 }
@@ -162,9 +162,9 @@ func (test *clientTest) validateExpectedVocalConvertion(vocal *proto.Vocal) {
 	test.testNumberOfProtoStructFields(vocal.Post.Location, 2)
 	test.assert.Equal([]*proto.Message{
 		&proto.Message{
-			Id: "890", Kind: proto.Message_TEXT, Size: uint64(564)},
+			Id: "890", Kind: proto.Message_TEXT, Size: uint32(564)},
 		&proto.Message{
-			Id: "892", Kind: proto.Message_TEXT, Size: uint64(565)}},
+			Id: "892", Kind: proto.Message_TEXT, Size: uint32(565)}},
 		vocal.Post.Messages)
 	test.assert.Equal(1, len(proto.Message_Kind_value))
 	test.testNumberOfProtoStructFields(vocal.Post.Messages[0], 3)
@@ -729,6 +729,8 @@ func Test_Accesspoint_Client_AddVocal_Execution(t *testing.T) {
 	test.testNumberOfProtoStructFields(request.Post, 2)
 	test.testNumberOfProtoStructFields(request.Post.Messages[0], 2)
 
+	test.log.EXPECT().Debug(`[Test.345.836] Vocal %d added.`, au10.PostID(987))
+
 	response, err := test.client.AddVocal(request)
 	test.validateExpectedVocalConvertion(response)
 	test.testNumberOfProtoStructFields(response, 1)
@@ -756,7 +758,9 @@ func Test_Accesspoint_Client_AddVocal_ExecutionUnknownResult(t *testing.T) {
 
 	test.log.EXPECT().Error(
 		`[Test.345.836] Failed to convert vocal: "unknown au10 message kind 1" (RPC error %d).`,
-		codes.Internal)
+		codes.Internal).
+		After(test.log.EXPECT().Debug(
+			`[Test.345.836] Vocal %d added.`, au10.PostID(987)))
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 
 	response, err := test.client.AddVocal(request)
@@ -870,22 +874,22 @@ func Test_Accesspoint_Client_ReadMessage_Execution(t *testing.T) {
 	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
 	test.testNumberOfProtoStructFields(request, 2)
 
-	message.EXPECT().GetSize().Return(uint64(7))
-	message.EXPECT().Load(gomock.Any(), uint64(6)).Do(
-		func(buffer *[]byte, offset uint64) {
-			test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+	message.EXPECT().GetSize().Return(uint32(7))
+	message.EXPECT().Load(gomock.Any(), uint32(6)).Do(
+		func(buffer *[]byte, offset uint32) {
+			test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
 			*buffer = []byte("6")
 		}).
 		Return(nil).
-		After(message.EXPECT().Load(gomock.Any(), uint64(3)).Do(
-			func(buffer *[]byte, offset uint64) {
-				test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+		After(message.EXPECT().Load(gomock.Any(), uint32(3)).Do(
+			func(buffer *[]byte, offset uint32) {
+				test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
 				*buffer = []byte("345")
 			}).
 			Return(nil).After(
-			message.EXPECT().Load(gomock.Any(), uint64(0)).Do(
-				func(buffer *[]byte, offset uint64) {
-					test.assert.Equal(props.MaxChunkSize, uint64(len(*buffer)))
+			message.EXPECT().Load(gomock.Any(), uint32(0)).Do(
+				func(buffer *[]byte, offset uint32) {
+					test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
 					*buffer = []byte("012")
 				}).
 				Return(nil)))
@@ -922,15 +926,15 @@ func Test_Accesspoint_Client_ReadMessage_ExecutionErrors(t *testing.T) {
 
 	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
 	test.testNumberOfProtoStructFields(request, 2)
-	message.EXPECT().GetSize().MinTimes(1).Return(uint64(7))
+	message.EXPECT().GetSize().MinTimes(1).Return(uint32(7))
 
 	test.log.EXPECT().Error(
 		`[Test.345.836] Failed to load chunk "123"/"456"/3: "test load error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message.EXPECT().Load(gomock.Any(), uint64(3)).
+	message.EXPECT().Load(gomock.Any(), uint32(3)).
 		Return(errors.New("test load error")).
-		After(message.EXPECT().Load(gomock.Any(), uint64(0)).Return(nil))
+		After(message.EXPECT().Load(gomock.Any(), uint32(0)).Return(nil))
 	stream := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
 	stream.EXPECT().Send(gomock.Any()).Return(nil)
 	err := test.client.ReadMessage(request, stream)
@@ -940,9 +944,9 @@ func Test_Accesspoint_Client_ReadMessage_ExecutionErrors(t *testing.T) {
 		`[Test.345.836] Failed to send chunk "123"/"456"/3: "test send error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message.EXPECT().Load(gomock.Any(), uint64(3)).
+	message.EXPECT().Load(gomock.Any(), uint32(3)).
 		Return(nil).
-		After(message.EXPECT().Load(gomock.Any(), uint64(0)).Return(nil))
+		After(message.EXPECT().Load(gomock.Any(), uint32(0)).Return(nil))
 	stream.EXPECT().Send(gomock.Any()).
 		Return(errors.New("test send error")).
 		After(stream.EXPECT().Send(gomock.Any()).Return(nil))

@@ -1,9 +1,9 @@
 package au10
 
 // UserID describes constant user ID.
-type UserID uint64
+type UserID uint32
 
-// User provides an interface of a user object.
+// User provides the interface of a user object.
 type User interface {
 	Member
 

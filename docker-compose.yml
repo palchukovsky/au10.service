@@ -14,11 +14,22 @@ services:
   stream-zookeeper:
     image: wurstmeister/zookeeper:3.4.6
 
+  post-db:
+    image: registry.gitlab.com/au10/service.postdb:master
+    environment:
+      POSTGRES_DB: posts
+      POSTGRES_USER: postdb
+      POSTGRES_PASSWORD: pOsTdBsEcReT_123
+  post-db-admin:
+    image: adminer
+    ports:
+      - 8081:8080
   publisher:
     image: registry.gitlab.com/au10/service.publisher:master
     depends_on:
       - stream-broker
-    command: -name 1 -stream_brokers stream-broker:9092
+      - post-db
+    command: -name 1 -stream_brokers stream-broker:9092 -db_name posts -db_login postdb -db_password pOsTdBsEcReT_123 -db_host post-db
 
   accesspoint-1:
     image: registry.gitlab.com/au10/service.accesspoint:master

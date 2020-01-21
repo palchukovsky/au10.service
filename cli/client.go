@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// DealOrDie creates service connection or stops process at error.
-func DealOrDie(address string) *Client {
+// DialOrDie creates service connection or stops process at error.
+func DialOrDie(address string) *Client {
 	var err error
 	var result Client
 	log.Printf(`Connecting to "%s"...`, address)
@@ -128,6 +128,30 @@ func (client *Client) ReadPosts() {
 		}
 	}
 	log.Println("Posts ended.")
+}
+
+// PostVocal posts new vocal.
+func (client *Client) PostVocal() {
+	log.Println("Positing vocal...")
+
+	messageText := "Test message from cli."
+	request := &proto.VocalAddRequest{
+		Post: &proto.PostAddRequest{
+			Location: &proto.GeoPoint{
+				Latitude:  34.692946,
+				Longitude: 33.031114},
+			Messages: []*proto.PostAddRequest_MessageDeclaration{
+				&proto.PostAddRequest_MessageDeclaration{
+					Kind: proto.Message_TEXT,
+					Size: uint32(len(messageText))}}}}
+
+	vocal, err := client.client.AddVocal(client.getCtx(), request)
+	if err != nil {
+		log.Fatalf(`Failed to post vocal: "%s".`, err)
+	}
+
+	log.Printf(`Vocal posted with ID "%s" and time %s.`+"\n",
+		vocal.Post.Id, time.Unix(0, vocal.Post.Time))
 }
 
 func (client *Client) getCtx() context.Context {

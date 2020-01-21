@@ -195,10 +195,10 @@ type logSubscription struct {
 }
 
 func (subscription *logSubscription) Close() {
+	close(subscription.recordsChan)
 	if subscription.stream != nil {
 		subscription.stream.Close()
 	}
-	close(subscription.recordsChan)
 	subscription.subscription.close()
 }
 
@@ -246,7 +246,6 @@ func (message *logRecord) GetNodeName() string {
 // ConvertSaramaMessageIntoLogRecord creates new LogRecord from stream data.
 func ConvertSaramaMessageIntoLogRecord(
 	source *sarama.ConsumerMessage) (LogRecord, error) {
-
 	result := &logRecord{message: source}
 	if err := json.Unmarshal(source.Value, &result.data); err != nil {
 		return nil, fmt.Errorf(`failed to parse log-record: "%s"`, err)

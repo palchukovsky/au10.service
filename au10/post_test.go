@@ -45,8 +45,8 @@ func Test_Au10_Post(test *testing.T) {
 	assert.Equal(au10.MessageID(789), messages[1].GetID())
 	assert.Equal(au10.MessageKindText, messages[0].GetKind())
 	assert.Equal(au10.MessageKindText, messages[1].GetKind())
-	assert.Equal(uint64(987), messages[0].GetSize())
-	assert.Equal(uint64(9874), messages[1].GetSize())
+	assert.Equal(uint32(987), messages[0].GetSize())
+	assert.Equal(uint32(9874), messages[1].GetSize())
 	assert.Equal(3,
 		reflect.Indirect(reflect.ValueOf(&au10.MessageData{})).NumField())
 

@@ -63,16 +63,19 @@ func main() {
 	defer server.Stop()
 	proto.RegisterAu10Server(server, accesspoint)
 
-	service.Log().Info(`Starting server on port "%d"...`, *port)
+	service.Log().Debug(`Starting server on port "%d"...`, *port)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		service.Log().Fatal(`Failed to open server port: "%s".`, err)
 		return
 	}
+	service.Log().Info(`Started server on port "%d".`, *port)
+
 	err = server.Serve(listen)
 	if err != nil {
 		service.Log().Fatal(`Failed to start server: "%s".`, err)
 		return
 	}
-	service.Log().Info("Server stopped.")
+
+	service.Log().Info("Server stopped. Closing...")
 }

@@ -88,7 +88,6 @@ func (*factory) NewStreamReader(
 	topics []string,
 	convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 	service Service) StreamReader {
-
 	result := &streamReader{
 		service:        service,
 		topics:         topics,
