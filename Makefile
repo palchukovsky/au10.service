@@ -25,7 +25,7 @@ PGDB_TAG = 12.1-alpine
 		build-postdb \
 		build-publisher \
 	codecov-branch \
-	release
+	release-service release-builder
 
 GO_GET_CMD = go get -v
 
@@ -217,13 +217,16 @@ build-builder-envoy: ## Build docker envoy base image.
 	@$(call echo_success)
 
 
-release: ## Push all images on the hub.
+release-service: ## Push service images on the hub.
 	@$(call echo_start)
-	docker push $(IMAGE_TAG_ENVOY)
 	docker push $(IMAGE_TAG_ACCESSPOINT)
 	docker push $(IMAGE_TAG_ACCESSPOINT_PROXY)
 	docker push ${IMAGE_TAG_POSTDB}
 	docker push ${IMAGE_TAG_PUBLISHER}
+	@$(call echo_success)
+release-builder: ## Push builder images on the hub.
+	@$(call echo_start)
+	docker push $(IMAGE_TAG_ENVOY)
 	docker push ${IMAGE_TAG_PROTOC}
 	docker push ${IMAGE_TAG_GOLANG}
 	@$(call echo_success)

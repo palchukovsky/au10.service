@@ -1,8 +1,8 @@
-- name: Build full
+- name: Build builder
   tag: builder
   service: make
-  command: make build-full TAG=master COMMIT=${CI_REPO_NAME}/${CI_COMMIT_ID} BUILD=${CI_BUILD_ID} MAINTAINER=${CI_COMMITTER_NAME}<${CI_COMMITTER_EMAIL}>
-- name: Build service only
+  command: make build-builder TAG=${CI_BRANCH} COMMIT=${CI_REPO_NAME}/${CI_COMMIT_ID} BUILD=${CI_BUILD_ID} MAINTAINER=${CI_COMMITTER_NAME}<${CI_COMMITTER_EMAIL}>
+- name: Build service
   exclude: builder
   service: make
   command: make build TAG=${CI_BRANCH} COMMIT=${CI_REPO_NAME}/${CI_COMMIT_ID} BUILD=${CI_BUILD_ID} MAINTAINER=${CI_COMMITTER_NAME}<${CI_COMMITTER_EMAIL}>
@@ -13,6 +13,10 @@
   command: make codecov-branch TAG=${CI_BRANCH}
 
 - name: Release
-  tag: ^(builder|mater)$
+  tag: master
   service: make
-  command: make release TAG=master
+  command: make release-service TAG=${CI_BRANCH}
+- name: Release
+  tag: builder
+  service: make
+  command: make release-builder TAG=${CI_BRANCH}
