@@ -24,7 +24,8 @@ PGDB_TAG = 12.1-alpine
 		build-accesspoint build-accesspoint-proxy \
 		build-postdb \
 		build-publisher \
-	codecov
+	codecov-branch \
+	release
 
 GO_GET_CMD = go get -v
 
@@ -56,7 +57,7 @@ define build_docker_builder_image
 	$(eval BUILDER_BUILT := 1)
 endef
 define build_docker_service_image
-	$(if $(BUILDER_BUILT),, $(call build_docker_builder_image))
+	$(if $(BUILDER_BUILT),,$(call build_docker_builder_image))
 	docker build --file "${CURDIR}/build/builder/service.Dockerfile" \
 		--build-arg SERVICE=$(1) \
 		--build-arg NODE_OS_NAME=${NODE_OS_NAME} \
@@ -228,7 +229,7 @@ release: ## Push all images on the hub.
 	@$(call echo_success)
 
 
-codecov: ## Upload actual code coverage information on codecov.io.
+codecov-branch: ## Upload actual code coverage information on codecov.io.
 	@$(call echo_start)
 	$(eval CONTAINER := $(shell docker create ${IMAGE_TAG_BUILDER}))
 	docker cp \
@@ -236,7 +237,7 @@ codecov: ## Upload actual code coverage information on codecov.io.
 			./coverage.txt
 	docker rm ${CONTAINER}
 	curl -X POST --data-binary @codecov.yml https://codecov.io/validate
-	curl -s https://codecov.io/bash | bash
+	curl -s https://codecov.io/bash -B ${TAG} | bash
 	@$(call echo_success)
 
 
