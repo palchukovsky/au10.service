@@ -7,7 +7,7 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-const publisherStream = "pubs"
+const publisherStreamTopic = "pubs"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,8 +16,9 @@ type Publisher interface {
 	Member
 	// Close closes the service.
 	Close()
-	// PublishVocal accepts new vocal for publications.
-	PublishVocal(*VocalDeclaration) (Vocal, error)
+	// AddVocal accepts new vocal for publications. The vocal will be published
+	// when the last message will be uploaded.
+	AddVocal(*VocalDeclaration) (Vocal, error)
 }
 
 type publisher struct {
@@ -28,8 +29,8 @@ type publisher struct {
 
 // NewPublisher creates new post publisher instance.
 func NewPublisher(service Service) (Publisher, error) {
-	stream, err := service.GetFactory().NewStreamWriterWithResult(publisherStream,
-		service)
+	stream, err := service.GetFactory().NewStreamWriterWithResult(
+		publisherStreamTopic, service)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (publisher *publisher) GetMembership() Membership {
 	return publisher.membership
 }
 
-func (publisher *publisher) PublishVocal(
+func (publisher *publisher) AddVocal(
 	vocal *VocalDeclaration) (Vocal, error) {
 	id, time, err := publisher.stream.Push(vocal)
 	if err != nil {
@@ -81,7 +82,7 @@ func NewPublishStreamSingleton(service Service) (PublishStream, error) {
 	result := &publishStreamSingleton{
 		subscription: newSubscription(),
 		reader: service.GetFactory().NewStreamReader(
-			[]string{publisherStream},
+			[]string{publisherStreamTopic},
 			func(source *sarama.ConsumerMessage) (interface{}, error) {
 				var decl VocalDeclaration
 				if err := json.Unmarshal(source.Value, &decl); err != nil {

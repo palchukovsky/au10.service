@@ -45,6 +45,9 @@ func main() {
 	}
 	defer stream.Close()
 
+	var notifier au10.PostNotifier
+	notifier, err = au10.NewPostNotifier(service)
+
 	service.Log().Debug("Starting...")
 	defer service.Log().Info("Stopping...")
 	for {
@@ -55,6 +58,8 @@ func main() {
 			}
 			if err := storePost(post, db); err != nil {
 				service.Log().Error(`Failed to store post: "%s".`, err)
+			} else if len(post.GetMessages()) == 0 {
+				notifier.PushVocal(post)
 			}
 		case err := <-stream.GetErrChan():
 			service.Log().Error(`Processing stream error: "%s"...`, err)

@@ -37,6 +37,8 @@ type Post interface {
 	GetLocation() *GeoPoint
 	// GetAuthor returns author user ID.
 	GetAuthor() UserID
+	// Export returns post data object.
+	Export() *PostData
 }
 
 // VocalDeclaration describes short information about a vocal
@@ -78,6 +80,7 @@ func (post *post) GetID() PostID             { return PostID(post.data.ID) }
 func (post *post) GetMembership() Membership { return post.membership }
 func (post *post) GetLocation() *GeoPoint    { return post.data.Location }
 func (post *post) GetAuthor() UserID         { return post.data.Author }
+func (post *post) Export() *PostData         { return &post.data }
 func (post *post) GetTime() time.Time {
 	return time.Unix(0, post.data.Time)
 }

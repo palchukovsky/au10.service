@@ -28,6 +28,14 @@ type PostsSubscription interface {
 	GetRecordsChan() <-chan Post
 }
 
+// PostNotifier represents the interface to notify about posts updates.
+type PostNotifier interface {
+	// PushVocal notifies push vocal in the notification queue.
+	PushVocal(Vocal) error
+	// Close closes the notification.
+	Close()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // NewPosts creates new posts service instance.
@@ -37,7 +45,7 @@ func NewPosts(service Service) Posts {
 		stream: service.GetFactory().NewStreamReader(
 			[]string{postsStreamTopic},
 			func(source *sarama.ConsumerMessage) (interface{}, error) {
-				return ConvertSaramaMessageIntoPost(source)
+				return ConvertSaramaMessageIntoVocal(source)
 			},
 			service)}
 }
@@ -60,7 +68,21 @@ func (posts *posts) GetPost(id PostID) (Post, error) {
 }
 
 func (posts *posts) Subscribe() (PostsSubscription, error) {
-	return newPostsSubscription(posts, posts.stream)
+
+	result := &postsSubscription{
+		subscription: newSubscription(),
+		postsChan:    make(chan Post, 1)}
+
+	var err error
+	result.stream, err = posts.stream.NewSubscription(
+		func(message interface{}) { result.postsChan <- message.(Post) },
+		result.errChan)
+	if err != nil {
+		result.Close()
+		return nil, err
+	}
+
+	return result, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,25 +91,6 @@ type postsSubscription struct {
 	subscription
 	stream    StreamSubscription
 	postsChan chan Post
-}
-
-func newPostsSubscription(
-	posts *posts,
-	reader StreamReader) (PostsSubscription, error) {
-
-	result := &postsSubscription{
-		subscription: newSubscription(),
-		postsChan:    make(chan Post, 1)}
-
-	var err error
-	result.stream, err = reader.NewSubscription(
-		func(message interface{}) { result.postsChan <- message.(Post) },
-		result.errChan)
-	if err != nil {
-		result.Close()
-		return nil, err
-	}
-	return result, nil
 }
 
 func (subscription *postsSubscription) Close() {
@@ -108,12 +111,34 @@ func (subscription *postsSubscription) GetErrChan() <-chan error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// ConvertSaramaMessageIntoPost creates new Post-object from stream data.
-func ConvertSaramaMessageIntoPost(
-	source *sarama.ConsumerMessage) (Post, error) {
-	result := &post{membership: NewMembership("", "")}
+type postNotifier struct {
+	stream StreamWriter
+}
+
+// NewPostNotifier creates new post notifier instance.
+func NewPostNotifier(service Service) (PostNotifier, error) {
+	stream, err := service.GetFactory().NewStreamWriter(postsStreamTopic,
+		service)
+	if err != nil {
+		return nil, err
+	}
+	return &postNotifier{stream: stream}, nil
+}
+
+func (notifier *postNotifier) Close() { notifier.stream.Close() }
+
+func (notifier *postNotifier) PushVocal(vocal Vocal) error {
+	return notifier.stream.PushAsync(vocal.Export())
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// ConvertSaramaMessageIntoVocal creates new Vocal-object from stream data.
+func ConvertSaramaMessageIntoVocal(
+	source *sarama.ConsumerMessage) (Vocal, error) {
+	result := &vocal{post: post{membership: NewMembership("", "")}}
 	if err := json.Unmarshal(source.Value, &result.data); err != nil {
-		return nil, fmt.Errorf(`failed to parse post-record: "%s"`, err)
+		return nil, fmt.Errorf(`failed to parse vocal-record: "%s"`, err)
 	}
 	return result, nil
 }

@@ -45,7 +45,7 @@ func Test_Au10_Publisher_Fields(test *testing.T) {
 	assert.Equal(au10.NewMembership("", ""), publisher.GetMembership())
 }
 
-func Test_Au10_Publisher_PublishVocal(test *testing.T) {
+func Test_Au10_Publisher_AddVocal(test *testing.T) {
 	mock := gomock.NewController(test)
 	defer mock.Finish()
 	assert := assert.New(test)
@@ -80,7 +80,7 @@ func Test_Au10_Publisher_PublishVocal(test *testing.T) {
 		reflect.Indirect(reflect.ValueOf(&au10.MessageDeclaration{})).NumField())
 
 	writer.EXPECT().Push(vocalDeclaration).Return(uint32(123), now, nil)
-	vocal, err := publisher.PublishVocal(vocalDeclaration)
+	vocal, err := publisher.AddVocal(vocalDeclaration)
 	assert.NotNil(vocal)
 	assert.NoError(err)
 	assert.Equal(au10.PostID(123), vocal.GetID())
@@ -97,7 +97,7 @@ func Test_Au10_Publisher_PublishVocal(test *testing.T) {
 
 	writer.EXPECT().Push(vocalDeclaration).
 		Return(uint32(123), now, errors.New("test error"))
-	vocal, err = publisher.PublishVocal(vocalDeclaration)
+	vocal, err = publisher.AddVocal(vocalDeclaration)
 	assert.Nil(vocal)
 	assert.EqualError(err, "test error")
 
@@ -154,13 +154,22 @@ func Test_Au10_Publisher_PublishStreamSingleton(test *testing.T) {
 		}`),
 		Offset:    123,
 		Timestamp: now})
-	vocal := convertedMessage.(au10.Vocal)
-	assert.Equal(au10.PostID(123), vocal.GetID())
-	assert.True(now.Equal(vocal.GetTime()))
+	assert.Equal(1,
+		reflect.Indirect(reflect.ValueOf(&au10.VocalDeclaration{})).NumField())
+	assert.Equal(3,
+		reflect.Indirect(reflect.ValueOf(&au10.PostDeclaration{})).NumField())
+	assert.Equal(2,
+		reflect.Indirect(reflect.ValueOf(&au10.GeoPoint{})).NumField())
+	assert.Equal(2,
+		reflect.Indirect(reflect.ValueOf(&au10.MessageDeclaration{})).NumField())
+	assert.NoError(err)
+	convertedVocal := convertedMessage.(au10.Vocal)
+	assert.Equal(au10.PostID(123), convertedVocal.GetID())
+	assert.True(now.Equal(convertedVocal.GetTime()))
 	assert.Equal(au10.GeoPoint{Latitude: 234.567, Longitude: 987.654},
-		*vocal.GetLocation())
-	assert.Equal(au10.UserID(8765), vocal.GetAuthor())
-	messages := vocal.GetMessages()
+		*convertedVocal.GetLocation())
+	assert.Equal(au10.UserID(8765), convertedVocal.GetAuthor())
+	messages := convertedVocal.GetMessages()
 	if assert.Equal(2, len(messages)) {
 		assert.Equal(au10.MessageID(0), messages[0].GetID())
 		assert.Equal(au10.MessageKindText, messages[0].GetKind())
@@ -198,12 +207,13 @@ func Test_Au10_Publisher_PublishStreamSingleton(test *testing.T) {
 	messageBarrier.Add(1)
 	stopBarrier := sync.WaitGroup{}
 	stopBarrier.Add(1)
+	vocal := mock_au10.NewMockVocal(mock)
 	go func() {
 		receivedRecord := false
 		for {
 			select {
 			case record := <-stream.GetRecordsChan():
-				assert.Equal(au10.PostID(123), record.GetID())
+				assert.True(vocal == record)
 				assert.False(receivedRecord)
 				receivedRecord = true
 				messageBarrier.Done()

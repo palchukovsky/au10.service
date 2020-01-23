@@ -710,7 +710,7 @@ func Test_Accesspoint_Client_AddVocal_Execution(t *testing.T) {
 
 	publisher := mock_au10.NewMockPublisher(test.mock)
 	publisher.EXPECT().GetMembership().Return(postsMembership)
-	publisher.EXPECT().PublishVocal(vocalDeclaration).
+	publisher.EXPECT().AddVocal(vocalDeclaration).
 		Return(test.expectVocalConvertion(au10.MessageKindText), nil)
 	test.service.EXPECT().GetPublisher().Return(publisher)
 
@@ -752,7 +752,7 @@ func Test_Accesspoint_Client_AddVocal_ExecutionUnknownResult(t *testing.T) {
 			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
 
 	publisher.EXPECT().GetMembership().Return(postsMembership)
-	publisher.EXPECT().PublishVocal(gomock.Any()).
+	publisher.EXPECT().AddVocal(gomock.Any()).
 		Return(test.expectVocalConvertion(1), nil)
 	test.service.EXPECT().GetPublisher().Return(publisher)
 
@@ -782,7 +782,7 @@ func Test_Accesspoint_Client_AddVocal_ExecutionError(t *testing.T) {
 
 	publisher := mock_au10.NewMockPublisher(test.mock)
 	publisher.EXPECT().GetMembership().Return(membership)
-	publisher.EXPECT().PublishVocal(gomock.Any()).
+	publisher.EXPECT().AddVocal(gomock.Any()).
 		Return(nil, errors.New("test error"))
 	test.service.EXPECT().GetPublisher().Return(publisher)
 

@@ -1,3 +1,5 @@
 * text=auto
 *.sh		eol=lf
 *.bash		eol=lf
+go.mod		eol=lf
+go.sum		eol=lf

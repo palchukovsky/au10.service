@@ -182,7 +182,7 @@ func (client *client) AddVocal(
 	}
 
 	var result au10.Vocal
-	result, err = publisher.PublishVocal(vocalRequest)
+	result, err = publisher.AddVocal(vocalRequest)
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal, `failed to add: "%s"`, err)
 	}
