@@ -13,11 +13,11 @@ NODE_OS_NAME = alpine
 NODE_OS_TAG = 3.10
 ENVOY_TAG = v1.12.2
 PGDB_TAG = 12.1-alpine
+GOLANGCI_VER = 1.23.1
 
 .PHONY: help \
 	install install-protoc install-mock install-mock-deps \
-	stub \
-	mock \
+	stub mock lint \
 	build \
 		build-full \
 		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
@@ -199,6 +199,7 @@ build-builder-golang: ## Build docker golang base node image.
 	@$(call echo_start)
 	docker build --file "./build/builder/golang.Dockerfile" \
 		--build-arg GOLANG_TAG=${GO_VER}-${NODE_OS_NAME}${NODE_OS_TAG} \
+		--build-arg GOLANGCI_VER=${GOLANGCI_VER} \
 		--label "Maintainer=${MAINTAINER}" \
 		--label "Commit=${COMMIT}" \
 		--label "Build=${BUILD}" \
@@ -241,6 +242,12 @@ codecov-branch: ## Upload actual code coverage information on codecov.io.
 	docker rm ${CONTAINER}
 	curl -X POST --data-binary @codecov.yml https://codecov.io/validate
 	curl -s https://codecov.io/bash -B ${TAG} | bash
+	@$(call echo_success)
+
+
+lint: ## Run linter.
+	@$(call echo_start)
+	golangci-lint run -v ./...
 	@$(call echo_success)
 
 

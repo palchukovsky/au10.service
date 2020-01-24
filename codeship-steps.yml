@@ -12,11 +12,11 @@
   service: make
   command: make codecov-branch TAG=${CI_BRANCH}
 
-- name: Release
+- name: Release service
   tag: master
   service: make
   command: make release-service TAG=${CI_BRANCH}
-- name: Release
+- name: Release builder
   tag: builder
   service: make
   command: make release-builder TAG=${CI_BRANCH}

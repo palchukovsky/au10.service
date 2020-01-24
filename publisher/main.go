@@ -39,7 +39,7 @@ func main() {
 
 	var stream au10.PublishStream
 	stream, err = au10.NewPublishStreamSingleton(service)
-	if err != nil {
+	if err != nil || stream == nil {
 		service.Log().Fatal(`Failed to start publish stream: "%s".`, err)
 		return
 	}
@@ -47,6 +47,10 @@ func main() {
 
 	var notifier au10.PostNotifier
 	notifier, err = au10.NewPostNotifier(service)
+	if err != nil {
+		service.Log().Fatal(`Failed to start notifier: "%s".`, err)
+		return
+	}
 
 	service.Log().Debug("Starting...")
 	defer service.Log().Info("Stopping...")
@@ -59,7 +63,10 @@ func main() {
 			if err := storePost(post, db); err != nil {
 				service.Log().Error(`Failed to store post: "%s".`, err)
 			} else if len(post.GetMessages()) == 0 {
-				notifier.PushVocal(post)
+				if err := notifier.PushVocal(post); err != nil {
+					service.Log().Error(`Failed to notify %d post: "%s".`,
+						post.GetID(), err)
+				}
 			}
 		case err := <-stream.GetErrChan():
 			service.Log().Error(`Processing stream error: "%s"...`, err)

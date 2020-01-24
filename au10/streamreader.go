@@ -35,7 +35,10 @@ func (subscription *streamSubscription) Close() {
 		// never subscribed
 		return
 	}
-	subscription.stream.request(subscription) // unsubscribe cannot return error
+	if err := subscription.stream.request(subscription); err != nil {
+		subscription.stream.service.Log().Error(
+			`Failed to close stream subscription: "%s".`, err)
+	}
 }
 
 type streamHandler struct {
@@ -102,7 +105,9 @@ func (*factory) NewStreamReader(
 }
 
 func (stream *streamReader) Close() {
-	stream.request(nil) // close cannot return error
+	if err := stream.request(nil); err != nil {
+		stream.service.Log().Error(`Failed to close stream reader: "%s".`, err)
+	}
 	if len(stream.subscriptions) != 0 {
 		stream.service.Log().Error(
 			`Not all (%d) subscribes of stream reading "%s" closed.`,
@@ -117,7 +122,6 @@ func (stream *streamReader) Close() {
 func (stream *streamReader) NewSubscription(
 	handle func(interface{}),
 	errChan chan<- error) (StreamSubscription, error) {
-
 	subscription := &streamSubscription{handle: handle, errChan: errChan}
 	err := stream.request(subscription)
 	if err != nil {

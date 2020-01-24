@@ -36,18 +36,6 @@ type serviceTest struct {
 	service proto.Au10Server
 }
 
-func newServiceTest(
-	test *testing.T,
-	newClient func(
-		uint32,
-		string,
-		au10.User,
-		ap.Service) ap.Client) *serviceTest {
-	result := newServiceTestObj(test)
-	result.init(newClient)
-	return result
-}
-
 func newServiceTestObj(test *testing.T) *serviceTest {
 	result := &serviceTest{
 		mock:   gomock.NewController(test),

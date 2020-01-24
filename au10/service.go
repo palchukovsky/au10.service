@@ -47,11 +47,10 @@ func DialOrPanic(
 		logRecord := fmt.Sprintf(
 			`Failed to connect to Au10 service: "%s". Stream borkers: "%s".`,
 			err, streamBrokers)
+		log.Println(logRecord)
 		if confErr == nil && i < 5 {
-			log.Println(logRecord)
 			time.Sleep(factory.NewRedialSleepTime())
 		} else {
-			log.Printf(logRecord)
 			panic(logRecord)
 		}
 	}

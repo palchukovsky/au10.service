@@ -30,8 +30,6 @@ type Service interface {
 }
 
 type service struct {
-	service au10.Service
-
 	props *proto.Props
 
 	log       au10.Log

@@ -155,6 +155,7 @@ func Test_Au10_LogReader(test *testing.T) {
 			`{"n": "test node name", "s": 2, "t": "test log record test"}`),
 		Offset:    123,
 		Timestamp: now})
+	assert.NoError(err)
 	assert.Equal(int64(123),
 		convertedMessage.(au10.LogRecord).GetSequenceNumber())
 	assert.True(now.Equal(convertedMessage.(au10.LogRecord).GetTime()))

@@ -43,7 +43,7 @@ func main() {
 	}
 
 	log.Printf("To exit press CTRL+C")
-	signalsChan := make(chan os.Signal)
+	signalsChan := make(chan os.Signal, 1)
 	defer close(signalsChan)
 	signal.Notify(signalsChan, os.Interrupt, syscall.SIGTERM)
 	<-signalsChan

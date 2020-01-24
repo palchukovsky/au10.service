@@ -33,7 +33,7 @@ func (*factory) NewStreamWriter(
 				result.topic, errMessage.Err)
 			if result.topic == logStreamTopic {
 				// for log stream, this record creates a sequence of calls without end
-				log.Printf(logMessage)
+				log.Println(logMessage)
 			} else {
 				result.log.Error(logMessage)
 			}
@@ -89,7 +89,7 @@ func (stream *streamWriter) Close() {
 			stream.topic, err)
 		if stream.topic == logStreamTopic {
 			// for log stream, this record creates a sequence of calls without end
-			log.Printf(message)
+			log.Println(message)
 		} else {
 			stream.log.Error(message)
 		}

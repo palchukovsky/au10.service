@@ -44,6 +44,10 @@ func main() {
 
 	var publisher au10.Publisher
 	publisher, err = au10.NewPublisher(service)
+	if err != nil || publisher == nil {
+		service.Log().Fatal(`Failed to create publisher: "%s".`, err)
+		return
+	}
 	defer publisher.Close()
 
 	var defaultUser au10.User

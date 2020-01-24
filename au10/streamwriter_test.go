@@ -107,8 +107,10 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 	var id uint32
 	var timestamp time.Time
 	id, timestamp, err = stream.Push(wrongMessage)
-	assert.NotNil(err)
 	close(wrongMessage)
+	assert.NotNil(err)
+	assert.Equal(uint32(0), id)
+	assert.True(time.Time{}.Equal(timestamp))
 
 	//	success
 	var message *sarama.ProducerMessage

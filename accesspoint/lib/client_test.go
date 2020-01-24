@@ -680,15 +680,6 @@ func Test_Accesspoint_Client_AddVocal_InvalidArgument(t *testing.T) {
 	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
 
-func (test *clientTest) testAddPostExecution(
-	expectAdd func(
-		*mock_au10.MockPostsMockRecorder,
-		[]au10.MessageDeclaration,
-		au10.User) *gomock.Call,
-	run func() (*proto.Post, error)) {
-
-}
-
 func Test_Accesspoint_Client_AddVocal_Execution(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()

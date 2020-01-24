@@ -62,8 +62,10 @@ func Test_Au10_Publisher_AddVocal(test *testing.T) {
 	factory.EXPECT().NewStreamWriterWithResult("pubs", service).
 		Return(writer, nil)
 	publisher, err := au10.NewPublisher(service)
-	now := time.Now()
+	assert.NoError(err)
+	assert.NotNil(publisher)
 
+	now := time.Now()
 	location := &au10.GeoPoint{}
 	vocalDeclaration := &au10.VocalDeclaration{
 		au10.PostDeclaration{
