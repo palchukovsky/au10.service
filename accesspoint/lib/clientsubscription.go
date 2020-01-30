@@ -25,8 +25,10 @@ func (client *client) runLogSubscription(
 	return client.runSubscription(
 		stream.Context(),
 		&logSubscription{
-			abstractSubscription: abstractSubscription{subscription: subscription},
-			stream:               stream},
+			abstractSubscription: abstractSubscription{
+				subscription: subscription,
+				convert:      client.service.Convert()},
+			stream: stream},
 		client.service.GetLogSubscriptionInfo())
 }
 
@@ -41,7 +43,8 @@ func (subscription *logSubscription) sendNext() (bool, error) {
 		if !isOpen {
 			return false, nil
 		}
-		return true, subscription.stream.Send(convertLogRecordToProto(record))
+		return true, subscription.stream.Send(
+			subscription.convert.LogRecordToProto(record))
 	case err := <-subscription.getSubscription().GetErrChan():
 		return false, err
 	}
@@ -59,7 +62,6 @@ func (subscription *logSubscription) getSubscription() au10.LogSubscription {
 
 func (client *client) runPostsSubscription(
 	posts au10.Posts, stream proto.Au10_ReadPostsServer) error {
-
 	subscription, err := posts.Subscribe()
 	if err != nil {
 		return client.RegisterError(codes.Internal, `failed to subscribe: "%s"`, err)
@@ -67,8 +69,10 @@ func (client *client) runPostsSubscription(
 	return client.runSubscription(
 		stream.Context(),
 		&postsSubscription{
-			abstractSubscription: abstractSubscription{subscription: subscription},
-			stream:               stream},
+			abstractSubscription: abstractSubscription{
+				subscription: subscription,
+				convert:      client.service.Convert()},
+			stream: stream},
 		client.service.GetPostsSubscriptionInfo())
 }
 
@@ -88,7 +92,7 @@ func (subscription *postsSubscription) sendNext() (bool, error) {
 		switch post := record.(type) {
 		case au10.Vocal:
 			message.Post = &proto.PostUpdate_Vocal{
-				Vocal: convertVocalToProto(post, &err)}
+				Vocal: subscription.convert.VocalToProto(post, &err)}
 		default:
 			err = fmt.Errorf(`unknown post type "%v"`, record)
 		}
@@ -168,6 +172,7 @@ func (client *client) runSubscription(
 
 type abstractSubscription struct {
 	subscription au10.Subscription
+	convert      Convertor
 }
 
 ////////////////////////////////////////////////////////////////////////////////

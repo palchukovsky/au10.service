@@ -11,9 +11,15 @@ import (
 )
 
 func Test_Au10_Users_FindUser(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
 	assert := assert.New(test)
 
-	users, err := au10.NewUsers(au10.NewFactory())
+	factory := au10.NewFactory()
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	users, err := au10.NewUsers(service)
 	assert.NoError(err)
 	defer users.Close()
 
@@ -27,10 +33,40 @@ func Test_Au10_Users_FindUser(test *testing.T) {
 	assert.NoError(err)
 }
 
-func Test_Au10_Users_All(test *testing.T) {
+func Test_Au10_Users_GetUser(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
 	assert := assert.New(test)
 
-	users, err := au10.NewUsers(au10.NewFactory())
+	factory := au10.NewFactory()
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	users, err := au10.NewUsers(service)
+	assert.NoError(err)
+	defer users.Close()
+
+	u, err := users.GetUser(au10.UserID(345))
+	assert.NoError(err)
+	assert.NotNil(u)
+	assert.Equal("domain_admin", u.GetLogin())
+	assert.Equal(au10.UserID(345), u.GetID())
+
+	u, err = users.GetUser(au10.UserID(0))
+	assert.Nil(u)
+	assert.EqualError(err, "failed to find user with ID 0")
+}
+
+func Test_Au10_Users_All(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
+	assert := assert.New(test)
+
+	factory := au10.NewFactory()
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	users, err := au10.NewUsers(service)
 	assert.NoError(err)
 	defer users.Close()
 
@@ -59,20 +95,31 @@ func Test_Au10_Users_Error(test *testing.T) {
 	assert := assert.New(test)
 
 	factory := mock_au10.NewMockFactory(mock)
-	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(
+		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(mock_au10.NewMockUser(mock), nil)
-	factory.EXPECT().NewUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	factory.EXPECT().NewUser(
+		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("test error"))
 
-	users, err := au10.NewUsers(factory)
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	users, err := au10.NewUsers(service)
 	assert.Nil(users)
 	assert.EqualError(err, "test error")
 }
 
 func Test_Au10_Users_Auth(test *testing.T) {
+	mock := gomock.NewController(test)
+	defer mock.Finish()
 	assert := assert.New(test)
 
-	users, err := au10.NewUsers(au10.NewFactory())
+	factory := au10.NewFactory()
+	service := mock_au10.NewMockService(mock)
+	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
+
+	users, err := au10.NewUsers(service)
 	assert.NoError(err)
 	defer users.Close()
 

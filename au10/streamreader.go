@@ -3,6 +3,7 @@ package au10
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -35,27 +36,19 @@ func (subscription *streamSubscription) Close() {
 		// never subscribed
 		return
 	}
-	if err := subscription.stream.request(subscription); err != nil {
-		subscription.stream.service.Log().Error(
-			`Failed to close stream subscription: "%s".`, err)
-	}
+	// unsubscribe cannot return error by design
+	_ = subscription.stream.request(subscription)
 }
 
 type streamHandler struct {
 	stream *streamReader
 }
 
-func (*streamHandler) Setup(sarama.ConsumerGroupSession) error {
-	return nil
-}
-
-func (*streamHandler) Cleanup(sarama.ConsumerGroupSession) error {
-	return nil
-}
+func (*streamHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (*streamHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
 func (handler *streamHandler) ConsumeClaim(
 	session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-
 	for message := range claim.Messages() {
 		convertedMessage, err := handler.stream.convertMessage(message)
 		if err != nil {
@@ -82,9 +75,10 @@ type streamReader struct {
 
 	subscriptions map[*streamSubscription]interface{}
 
-	cancelConsume context.CancelFunc
-	stopBarrier   sync.WaitGroup
-	consumer      sarama.ConsumerGroup
+	cancelConsume        context.CancelFunc
+	consumingStopBarrier sync.WaitGroup
+	consumerStopBarrier  sync.WaitGroup
+	consumer             sarama.ConsumerGroup
 }
 
 func (*factory) NewStreamReader(
@@ -105,9 +99,7 @@ func (*factory) NewStreamReader(
 }
 
 func (stream *streamReader) Close() {
-	if err := stream.request(nil); err != nil {
-		stream.service.Log().Error(`Failed to close stream reader: "%s".`, err)
-	}
+	_ = stream.request(nil) // unsubscribe cannot return error
 	if len(stream.subscriptions) != 0 {
 		stream.service.Log().Error(
 			`Not all (%d) subscribes of stream reading "%s" closed.`,
@@ -203,10 +195,33 @@ func (stream *streamReader) start() error {
 			stream.getTopic(), err)
 	}
 
+	stream.consumerStopBarrier = sync.WaitGroup{}
+	stream.consumerStopBarrier.Add(1)
+	go func() {
+		for err := range stream.consumer.Errors() {
+			logMessage := fmt.Sprintf(`Streams "%s" reading error: "%s".`,
+				stream.getTopic(), err)
+			isLog := false
+			for _, topic := range stream.topics {
+				isLog = topic == logStreamTopic
+				if topic == logStreamTopic {
+					break
+				}
+			}
+			if isLog {
+				// for log stream, this record creates a sequence of calls without end
+				log.Println(logMessage)
+			} else {
+				stream.service.Log().Error(logMessage)
+			}
+		}
+		stream.consumerStopBarrier.Done()
+	}()
+
 	var ctx context.Context
 	ctx, stream.cancelConsume = context.WithCancel(context.Background())
-	stream.stopBarrier = sync.WaitGroup{}
-	stream.stopBarrier.Add(1)
+	stream.consumingStopBarrier = sync.WaitGroup{}
+	stream.consumingStopBarrier.Add(1)
 	go func() {
 		handler := &streamHandler{stream: stream}
 		for {
@@ -225,7 +240,7 @@ func (stream *streamReader) start() error {
 			}
 			break
 		}
-		stream.stopBarrier.Done()
+		stream.consumingStopBarrier.Done()
 	}()
 
 	stream.service.Log().Debug(`Stream reading "%s" opened.`, stream.getTopic())
@@ -234,13 +249,14 @@ func (stream *streamReader) start() error {
 
 func (stream *streamReader) stop() {
 	stream.cancelConsume()
-	stream.stopBarrier.Wait()
+	stream.consumingStopBarrier.Wait()
 	if err := stream.consumer.Close(); err != nil {
 		stream.service.Log().Error(`Failed to close stream reading "%s": "%s".`,
 			stream.getTopic(), err)
 	} else {
 		stream.service.Log().Debug(`Stream reading "%s" closed.`, stream.getTopic())
 	}
+	stream.consumerStopBarrier.Wait()
 	stream.consumer = nil
 }
 

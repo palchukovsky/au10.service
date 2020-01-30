@@ -134,24 +134,41 @@ func (client *Client) ReadPosts() {
 func (client *Client) PostVocal() {
 	log.Println("Positing vocal...")
 
-	messageText := "Test message from cli."
-	request := &proto.VocalAddRequest{
-		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{
-				Latitude:  34.692946,
-				Longitude: 33.031114},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{
-				&proto.PostAddRequest_MessageDeclaration{
-					Kind: proto.Message_TEXT,
-					Size: uint32(len(messageText))}}}}
-
-	vocal, err := client.client.AddVocal(client.getCtx(), request)
+	messageText := `Test message from cli: "ABC", "1234567890" and "!@#$%^&*()".`
+	vocal, err := client.client.AddVocal(
+		client.getCtx(),
+		&proto.VocalAddRequest{
+			Post: &proto.PostAddRequest{
+				Location: &proto.GeoPoint{
+					Latitude:  34.692946,
+					Longitude: 33.031114},
+				Messages: []*proto.PostAddRequest_MessageDeclaration{
+					&proto.PostAddRequest_MessageDeclaration{
+						Kind: proto.Message_TEXT,
+						Size: uint32(len(messageText))}}}})
 	if err != nil {
 		log.Fatalf(`Failed to post vocal: "%s".`, err)
 	}
 
+	log.Printf(`Added post with ID "%s" and time %s. Writing images...`+"\n",
+		vocal.Post.Id, time.Unix(0, vocal.Post.Time))
+
+	chuckSize := 3
+	for i := 0; i < len(messageText); i += chuckSize {
+		_, err = client.client.WriteMessageChunk(
+			client.getCtx(),
+			&proto.MessageChunkWriteRequest{
+				PostID:    vocal.Post.Id,
+				MessageID: vocal.Post.Messages[0].Id,
+				Chunk:     []byte(messageText[i:chuckSize])})
+		if err != nil {
+			log.Fatalf(`Failed to post vocal: "%s".`, err)
+		}
+	}
+
 	log.Printf(`Vocal posted with ID "%s" and time %s.`+"\n",
 		vocal.Post.Id, time.Unix(0, vocal.Post.Time))
+
 }
 
 func (client *Client) getCtx() context.Context {

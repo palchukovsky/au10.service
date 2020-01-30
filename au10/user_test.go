@@ -20,26 +20,20 @@ func Test_Au10_User_Fields(test *testing.T) {
 		mock_au10.NewMockRights(ctrl),
 		mock_au10.NewMockRights(ctrl)}
 
-	user, err := au10.NewFactory().NewUser(123, "test login", membership, rights)
+	service := mock_au10.NewMockService(ctrl)
+
+	user, err := au10.NewFactory().NewUser(123, "test login",
+		membership, rights, service)
 	assert.NoError(err)
 	assert.NotNil(user)
 
 	assert.Equal(au10.UserID(123), user.GetID())
 	assert.Equal("test login", user.GetLogin())
 	assert.True(user.GetMembership() == membership)
+	assert.Equal(rights, user.GetRights())
 
-	// source could not change object
-	rights = append(rights, mock_au10.NewMockRights(ctrl))
-	assert.Len(user.GetRights(), 2)
-	assert.True(user.GetRights()[0] == rights[0])
-	assert.True(user.GetRights()[1] == rights[1])
-
-	// returned list could not change object
-	rights = user.GetRights()
-	prevRights := rights[0]
-	rights[0] = mock_au10.NewMockRights(ctrl)
-	assert.Len(user.GetRights(), 2)
-	assert.True(user.GetRights()[0] != rights[0])
-	assert.True(user.GetRights()[0] == prevRights)
-	assert.True(user.GetRights()[1] == rights[1])
+	log := mock_au10.NewMockLog(ctrl)
+	log.EXPECT().Warn("User %d blocked by protocol mismatch.", au10.UserID(123))
+	service.EXPECT().Log().Return(log)
+	user.BlockByProtocolMismatch()
 }

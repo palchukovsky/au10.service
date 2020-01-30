@@ -47,7 +47,7 @@ type client struct {
 }
 
 func (client *client) getLogHeader(format string) string {
-	return fmt.Sprintf("[%s.%d.%d] ",
+	return fmt.Sprintf("[%s/%d/%d] ",
 		client.request, client.requestID, client.user.GetID()) +
 		format
 }
@@ -91,6 +91,9 @@ func (client *client) RegisterError(
 		client.LogError(strings.ToUpper(desc[:1])+desc[1:]+" (RPC error %d).", code)
 	} else {
 		client.LogError("RPC error %d.", code)
+	}
+	if code == codes.InvalidArgument {
+		client.user.BlockByProtocolMismatch()
 	}
 	var externalDesc string
 	if client.service.Log().GetMembership().IsAllowed(client.user.GetRights()) {
@@ -143,7 +146,7 @@ func (client *client) ReadPosts(
 func (client *client) ReadMessage(
 	request *proto.MessageReadRequest,
 	stream proto.Au10_ReadMessageServer) error {
-	message, err := client.getMessage(request.PostID, request.MessageID)
+	message, err := client.getMessage(request.MessageID, request.PostID)
 	if err != nil {
 		return err
 	}
@@ -169,10 +172,11 @@ func (client *client) AddVocal(
 	request *proto.VocalAddRequest) (*proto.Vocal, error) {
 
 	var err error
-	vocalRequest := covertVocalDeclarationFromProto(request, client.user, &err)
+	vocalRequest := client.service.Convert().VocalDeclarationFromProto(
+		request, client.user, &err)
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal,
-			`failed to convert message kind: "%s"`, err)
+			`failed to convert vocal declaraton: "%s"`, err)
 	}
 
 	publisher := client.service.GetPublisher()
@@ -186,9 +190,9 @@ func (client *client) AddVocal(
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal, `failed to add: "%s"`, err)
 	}
-	client.LogDebug("Vocal %d added.", result.GetID())
+	client.LogDebug("Added vocal %d.", result.GetID())
 
-	response := convertVocalToProto(result, &err)
+	response := client.service.Convert().VocalToProto(result, &err)
 	if err != nil {
 		return nil, client.RegisterError(codes.Internal,
 			`failed to convert vocal: "%s"`, err)
@@ -198,69 +202,74 @@ func (client *client) AddVocal(
 
 func (client *client) WriteMessageChunk(
 	request *proto.MessageChunkWriteRequest) (*proto.MessageChunkWriteResponse, error) {
-	message, err := client.getMessage(request.PostID, request.MessageID)
+
+	if uint32(len(request.Chunk)) > client.service.GetGlobalProps().MaxChunkSize {
+		return nil, client.RegisterError(codes.InvalidArgument,
+			`chunk size for message "%s"/"%s" is too big: %d > %d`,
+			request.PostID, request.MessageID,
+			len(request.Chunk), client.service.GetGlobalProps().MaxChunkSize)
+	}
+	if len(request.Chunk) == 0 {
+		return nil, client.RegisterError(codes.InvalidArgument,
+			`chunk size is empty for message "%s"/"%s"`,
+			request.PostID, request.MessageID)
+	}
+	err := client.checkRights(client.service.GetPublisher(),
+		`message "%s"/"%s" publishing`, request.PostID, request.MessageID)
 	if err != nil {
 		return nil, err
 	}
-	if err = message.Append(request.Chunk); err != nil {
-		return nil, client.RegisterError(codes.Internal,
-			`failed to write chunk "%s"/"%s": "%s"`,
-			request.PostID, request.MessageID, err)
+
+	var id au10.MessageID
+	var post au10.PostID
+	id, post, err = client.parseMessageID(request.MessageID, request.PostID)
+	if err != nil {
+		return nil, err
 	}
+	err = client.service.GetPublisher().AppendMessage(
+		id, post, client.user, request.Chunk)
+	if err != nil {
+		return nil, client.RegisterError(codes.Internal,
+			`failed to write %d bytes for "%s"/"%s": "%s"`,
+			len(request.Chunk), request.PostID, request.MessageID, err)
+	}
+	client.LogDebug(`Written %d bytes for "%s"/"%s".`,
+		len(request.Chunk), request.PostID, request.MessageID)
 	return &proto.MessageChunkWriteResponse{}, nil
 }
 
-func (client *client) getMessage(
-	requestPostID, requestMessageID string) (au10.Message, error) {
-
+func (client *client) parseMessageID(
+	idSource, postSource string) (au10.MessageID, au10.PostID, error) {
 	var err error
-	intPostID := convertIDFromProto(requestPostID, &err)
+	post := client.service.Convert().PostIDFromProto(postSource, &err)
 	if err != nil {
-		return nil, client.RegisterError(codes.InvalidArgument,
+		return 0, 0, client.RegisterError(codes.InvalidArgument,
 			`failed to parse post ID "%s"/"%s": "%s"`,
-			requestPostID, requestMessageID, err)
+			postSource, idSource, err)
 	}
-	intMessageID := convertIDFromProto(requestMessageID, &err)
+	id := client.service.Convert().MessageIDFromProto(idSource, &err)
 	if err != nil {
-		return nil, client.RegisterError(codes.InvalidArgument,
+		return 0, 0, client.RegisterError(codes.InvalidArgument,
 			`failed to parse message ID "%s"/"%s": "%s"`,
-			requestPostID, requestMessageID, err)
+			postSource, idSource, err)
+	}
+	return id, post, nil
+}
+
+func (client *client) getMessage(
+	requestID, requestPostID string) (au10.Message, error) {
+
+	_, _, err := client.parseMessageID(requestID, requestPostID)
+	if err != nil {
+		return nil, err
 	}
 
 	posts := client.service.GetPosts()
-	if err := client.checkRights(posts, "posts"); err != nil {
+	if err = client.checkRights(posts, "posts"); err != nil {
 		return nil, err
 	}
 
-	var post au10.Post
-	if post, err = posts.GetPost(au10.PostID(intPostID)); err != nil {
-		return nil, client.RegisterError(codes.InvalidArgument,
-			`failed to get post "%s"/"%s": "%s"`,
-			requestPostID, requestMessageID, err)
-	}
-	err = client.checkRights(post, `post "%s"/"%s"`,
-		requestPostID, requestMessageID)
-	if err != nil {
-		return nil, err
-	}
-	messageID := au10.MessageID(intMessageID)
-	var message au10.Message
-	for _, m := range post.GetMessages() {
-		if m.GetID() == messageID {
-			message = m
-			break
-		}
-	}
-	if message == nil {
-		return nil, client.RegisterError(codes.InvalidArgument,
-			`failed to find message "%s"/"%s"`, requestPostID, requestMessageID)
-	}
-	err = client.checkRights(message, `message "%s"/"%s"`,
-		requestPostID, requestMessageID)
-	if err != nil {
-		return nil, err
-	}
-	return message, nil
+	return nil, nil
 }
 
 func (client *client) checkRights(
@@ -269,7 +278,7 @@ func (client *client) checkRights(
 	args ...interface{}) error {
 	if !entity.GetMembership().IsAllowed(client.user.GetRights()) {
 		return client.RegisterError(codes.PermissionDenied,
-			"Permission denied for "+format, args...)
+			"permission denied for "+format, args...)
 	}
 	return nil
 }

@@ -17,6 +17,7 @@ type Service interface {
 
 	Log() au10.Log
 	GetLogReader() au10.LogReader
+	Convert() Convertor
 
 	GetPosts() au10.Posts
 	GetPublisher() au10.Publisher
@@ -44,7 +45,8 @@ type service struct {
 		request string,
 		user au10.User,
 		service Service) Client
-	grpc Grpc
+	grpc      Grpc
+	convertor Convertor
 
 	lastRequestID         uint32
 	numberOfSubscribers   uint32
@@ -77,10 +79,12 @@ func NewAu10Server(
 		defaultUser:           defaultUser,
 		newClient:             newClient,
 		grpc:                  grpc,
+		convertor:             NewConvertor(),
 		logSubscriptionInfo:   &SubscriptionInfo{},
 		postsSubscriptionInfo: &SubscriptionInfo{}}
 }
 
+func (service *service) Convert() Convertor   { return service.convertor }
 func (service *service) Log() au10.Log        { return service.log }
 func (service *service) GetPosts() au10.Posts { return service.posts }
 func (service *service) GetUsers() au10.Users { return service.users }

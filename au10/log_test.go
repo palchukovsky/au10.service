@@ -18,7 +18,7 @@ func Test_Au10_Log(test *testing.T) {
 	defer mock.Finish()
 	assert := assert.New(test)
 
-	writer := mock_au10.NewMockStreamWriter(mock)
+	writer := mock_au10.NewMockStreamAsyncWriter(mock)
 	writer.EXPECT().Close()
 
 	factory := mock_au10.NewMockFactory(mock)
@@ -27,13 +27,13 @@ func Test_Au10_Log(test *testing.T) {
 	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
 	service.EXPECT().GetNodeName().MinTimes(1).Return("test node name")
 
-	factory.EXPECT().NewStreamWriter("log", service).
+	factory.EXPECT().NewStreamAsyncWriter("log", service).
 		Return(nil, errors.New("writer test error"))
 	log, err := au10.NewFactory().NewLog(service)
 	assert.Nil(log)
 	assert.EqualError(err, "writer test error")
 
-	factory.EXPECT().NewStreamWriter("log", service).Return(writer, nil)
+	factory.EXPECT().NewStreamAsyncWriter("log", service).Return(writer, nil)
 	log, err = au10.NewFactory().NewLog(service)
 	assert.NotNil(log)
 	defer log.Close()

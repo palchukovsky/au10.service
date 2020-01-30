@@ -1,7 +1,10 @@
 package au10
 
 import (
+	"fmt"
 	"time"
+
+	"bitbucket.org/au10/service/postdb"
 )
 
 // PostID is a post ID.
@@ -52,7 +55,7 @@ type Vocal interface {
 	Post
 }
 
-func newVocal(id PostID, time time.Time, decl *VocalDeclaration) Vocal {
+func newNewVocal(id PostID, time time.Time, decl *VocalDeclaration) Vocal {
 	result := &vocal{
 		post: post{
 			membership: NewMembership("", ""),
@@ -69,6 +72,34 @@ func newVocal(id PostID, time time.Time, decl *VocalDeclaration) Vocal {
 			Size: m.Size}
 	}
 	return result
+}
+
+func newDBVocal(source *postdb.Post) (Vocal, error) {
+	result := &vocal{
+		post: post{
+			membership: NewMembership("", ""),
+			data: PostData{
+				ID:     PostID(source.ID),
+				Time:   source.Time.UnixNano(),
+				Author: UserID(source.Author),
+				Location: &GeoPoint{
+					Longitude: source.LocaltionLongitude,
+					Latitude:  source.LocaltionLatitude},
+				Messages: make([]*MessageData, len(source.Messages))}}}
+	for i, m := range source.Messages {
+		kind := MessageKind(m.Kind)
+		switch kind {
+		case MessageKindText:
+			break
+		default:
+			return nil, fmt.Errorf("unknown DB-record message kind %d", m.Kind)
+		}
+		result.data.Messages[i] = &MessageData{
+			ID:   MessageID(m.ID),
+			Kind: kind,
+			Size: uint32(m.Size)}
+	}
+	return result, nil
 }
 
 type post struct {

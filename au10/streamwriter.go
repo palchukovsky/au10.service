@@ -11,15 +11,15 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-// StreamWriter describes the interface to write data to a stream.
-type StreamWriter interface {
+// StreamAsyncWriter describes the interface to write data to a stream.
+type StreamAsyncWriter interface {
 	Close()
 	PushAsync(interface{}) error
 }
 
-func (*factory) NewStreamWriter(
+func (*factory) NewStreamAsyncWriter(
 	topic string,
-	service Service) (StreamWriter, error) {
+	service Service) (StreamAsyncWriter, error) {
 
 	result, err := newStreamWriter(topic, false, service)
 	if err != nil {
@@ -44,16 +44,16 @@ func (*factory) NewStreamWriter(
 	return result, nil
 }
 
-// StreamWriterWithResult describes the interface to write data to a stream
+// StreamSyncWriter describes the interface to write data to a stream
 // and wait for result.
-type StreamWriterWithResult interface {
+type StreamSyncWriter interface {
 	Close()
 	Push(interface{}) (id uint32, timestamp time.Time, err error)
 }
 
-func (*factory) NewStreamWriterWithResult(
+func (*factory) NewStreamSyncWriter(
 	topic string,
-	service Service) (StreamWriterWithResult, error) {
+	service Service) (StreamSyncWriter, error) {
 	return newStreamWriter(topic, true, service)
 }
 

@@ -14,10 +14,8 @@ type Factory interface {
 		topics []string,
 		convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 		service Service) StreamReader
-	NewStreamWriter(topic string, service Service) (StreamWriter, error)
-	NewStreamWriterWithResult(
-		topic string,
-		service Service) (StreamWriterWithResult, error)
+	NewStreamAsyncWriter(topic string, service Service) (StreamAsyncWriter, error)
+	NewStreamSyncWriter(topic string, service Service) (StreamSyncWriter, error)
 
 	NewLog(service Service) (Log, error)
 
@@ -25,7 +23,8 @@ type Factory interface {
 		id UserID,
 		login string,
 		membership Membership,
-		rights []Rights) (User, error)
+		rights []Rights,
+		service Service) (User, error)
 
 	NewSaramaProducer(
 		service Service,

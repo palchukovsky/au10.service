@@ -4,9 +4,6 @@ package main
 import (
 	"flag"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
@@ -41,10 +38,4 @@ func main() {
 	default:
 		log.Fatalf(`Unknown command: "%s".`, *command)
 	}
-
-	log.Printf("To exit press CTRL+C")
-	signalsChan := make(chan os.Signal, 1)
-	defer close(signalsChan)
-	signal.Notify(signalsChan, os.Interrupt, syscall.SIGTERM)
-	<-signalsChan
 }

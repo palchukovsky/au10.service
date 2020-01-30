@@ -34,7 +34,7 @@ func Test_Au10_StreamWriter_MessageAsync(test *testing.T) {
 	service.EXPECT().GetNodeType().MinTimes(1).Return("test node type")
 	service.EXPECT().Log().Return(log)
 
-	stream, err := au10.NewFactory().NewStreamWriter("test topic 2", service)
+	stream, err := au10.NewFactory().NewStreamAsyncWriter("test topic 2", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 
@@ -94,7 +94,7 @@ func Test_Au10_StreamWriter_MessageSync(test *testing.T) {
 	service.EXPECT().GetNodeType().MinTimes(1).Return("test node type")
 	service.EXPECT().Log().Return(log)
 
-	stream, err := au10.NewFactory().NewStreamWriterWithResult("test topic 2",
+	stream, err := au10.NewFactory().NewStreamSyncWriter("test topic 2",
 		service)
 	assert.NotNil(stream)
 	assert.NoError(err)
@@ -204,7 +204,7 @@ func Test_Au10_StreamWriter_FailedToNew(test *testing.T) {
 	service.EXPECT().Log().Return(log)
 	service.EXPECT().GetFactory().Return(factory)
 	service.EXPECT().GetNodeType().Return("test node type")
-	streamAsync, err := au10.NewFactory().NewStreamWriter("test topic 1", service)
+	streamAsync, err := au10.NewFactory().NewStreamAsyncWriter("test topic 1", service)
 	assert.Nil(streamAsync)
 	assert.EqualError(err, "test error 1")
 
@@ -213,8 +213,8 @@ func Test_Au10_StreamWriter_FailedToNew(test *testing.T) {
 	service.EXPECT().Log().Return(log)
 	service.EXPECT().GetFactory().Return(factory)
 	service.EXPECT().GetNodeType().Return("test node type")
-	var streamSync au10.StreamWriterWithResult
-	streamSync, err = au10.NewFactory().NewStreamWriterWithResult("test topic 2",
+	var streamSync au10.StreamSyncWriter
+	streamSync, err = au10.NewFactory().NewStreamSyncWriter("test topic 2",
 		service)
 	assert.Nil(streamSync)
 	assert.EqualError(err, "test error 2")
@@ -243,7 +243,7 @@ func Test_Au10_StreamWriter_AsyncErrorsInProducer(test *testing.T) {
 	producer.EXPECT().Errors().Return(producerErrsChan)
 	factory.EXPECT().NewSaramaProducer(service, false).Return(producer, nil)
 	service.EXPECT().GetFactory().Return(factory)
-	stream, err := au10.NewFactory().NewStreamWriter("log", service)
+	stream, err := au10.NewFactory().NewStreamAsyncWriter("log", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 	producerErrsChan <- &sarama.ProducerError{
@@ -258,7 +258,7 @@ func Test_Au10_StreamWriter_AsyncErrorsInProducer(test *testing.T) {
 	producer.EXPECT().Close().Do(func() { close(producerErrsChan) }).
 		Return(errors.New("test error at closing for non-log"))
 	producer.EXPECT().Errors().Return(producerErrsChan)
-	stream, err = au10.NewFactory().NewStreamWriter("not log", service)
+	stream, err = au10.NewFactory().NewStreamAsyncWriter("not log", service)
 	assert.NotNil(stream)
 	assert.NoError(err)
 	log.EXPECT().Error(

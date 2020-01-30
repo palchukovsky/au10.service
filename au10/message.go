@@ -22,15 +22,12 @@ type MessageDeclaration struct {
 
 // Message describes post message interface.
 type Message interface {
-	Member
 	// GetID returns message ID.
 	GetID() MessageID
 	// GetKind returns message kind code.
 	GetKind() MessageKind
 	// GetSize returns message size in bytes.
 	GetSize() uint32
-	// Append appends bytes to message content.
-	Append([]byte) error
 	// Load loads message content into the provided buffer. Decreases buffer size
 	// for the last chunk, if the last chunk has the smaller size than the passed
 	// buffer.
@@ -54,15 +51,9 @@ type message struct {
 	post Post
 }
 
-func (message *message) GetMembership() Membership {
-	return message.post.GetMembership()
-}
 func (message *message) GetID() MessageID     { return message.data.ID }
 func (message *message) GetKind() MessageKind { return message.data.Kind }
 func (message *message) GetSize() uint32      { return message.data.Size }
-func (message *message) Append([]byte) error {
-	return errors.New("not implemented")
-}
 func (message *message) Load(buffer *[]byte, offset uint32) error {
 	return errors.New("not implemented")
 }

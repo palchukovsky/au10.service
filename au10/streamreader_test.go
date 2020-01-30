@@ -29,15 +29,16 @@ func Test_Au10_StreamReader_Dummy(test *testing.T) {
 }
 
 type streamReaderTest struct {
-	test     *testing.T
-	topic    []string
-	mock     *gomock.Controller
-	assert   *assert.Assertions
-	factory  *mock_au10.MockFactory
-	log      *mock_au10.MockLog
-	service  *mock_au10.MockService
-	session  *mock_sarama.MockConsumerGroupSession
-	consumer *mock_sarama.MockConsumerGroup
+	test               *testing.T
+	topic              []string
+	mock               *gomock.Controller
+	assert             *assert.Assertions
+	factory            *mock_au10.MockFactory
+	log                *mock_au10.MockLog
+	service            *mock_au10.MockService
+	session            *mock_sarama.MockConsumerGroupSession
+	consumer           *mock_sarama.MockConsumerGroup
+	consumerErrorsChan chan error
 
 	stream au10.StreamReader
 
@@ -49,15 +50,17 @@ type streamReaderTest struct {
 
 func newStreamReaderTest(
 	test *testing.T,
+	topic []string,
 	convertMessage func(*sarama.ConsumerMessage) (interface{}, error),
 	consumerCloseResult error) *streamReaderTest {
 
 	result := &streamReaderTest{
-		test:        test,
-		topic:       []string{"topic 1", "topic 2"},
-		mock:        gomock.NewController(test),
-		assert:      assert.New(test),
-		consumeChan: make(chan sarama.ConsumerGroupClaim)}
+		test:               test,
+		topic:              topic,
+		mock:               gomock.NewController(test),
+		assert:             assert.New(test),
+		consumeChan:        make(chan sarama.ConsumerGroupClaim),
+		consumerErrorsChan: make(chan error)}
 
 	result.factory = mock_au10.NewMockFactory(result.mock)
 
@@ -70,15 +73,18 @@ func newStreamReaderTest(
 	result.session = mock_sarama.NewMockConsumerGroupSession(result.mock)
 
 	result.consumer = mock_sarama.NewMockConsumerGroup(result.mock)
-	result.consumer.EXPECT().Close().Return(consumerCloseResult)
+	result.consumer.EXPECT().Close().
+		Do(func() {
+			close(result.consumerErrorsChan)
+		}).
+		Return(consumerCloseResult)
 	if consumerCloseResult == nil {
 		result.log.EXPECT().Debug(`Stream reading "%s" closed.`, result.getTopic())
 	} else {
 		result.log.EXPECT().Error(`Failed to close stream reading "%s": "%s".`,
 			result.getTopic(), consumerCloseResult)
 	}
-	result.consumer.EXPECT().Consume(
-		gomock.Any(), result.topic, gomock.Any()).
+	result.consumer.EXPECT().Consume(gomock.Any(), result.topic, gomock.Any()).
 		AnyTimes().
 		DoAndReturn(func(
 			ctx context.Context,
@@ -97,6 +103,8 @@ func newStreamReaderTest(
 			}
 		})
 
+	result.consumer.EXPECT().Errors().AnyTimes().Return(result.consumerErrorsChan)
+
 	result.factory.EXPECT().NewSaramaConsumer(result.service).
 		Return(result.consumer, nil)
 
@@ -113,9 +121,8 @@ func (test *streamReaderTest) close() {
 	test.mock.Finish()
 }
 
-func (test *streamReaderTest) newSubscription(errChan chan<- error) (
-	au10.StreamSubscription, *[]uint32) {
-
+func (test *streamReaderTest) newSubscription(
+	errChan chan<- error) (au10.StreamSubscription, *[]uint32) {
 	messages := &[]uint32{}
 	subscription, err := test.stream.NewSubscription(
 		func(message interface{}) {
@@ -172,8 +179,7 @@ func (test *streamReaderTest) getTopic() string {
 }
 
 func Test_Au10_StreamReader_1Subscription(t *testing.T) {
-	test := newStreamReaderTest(
-		t,
+	test := newStreamReaderTest(t, []string{"topic 1", "topic 2"},
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return binary.BigEndian.Uint32(message.Value), nil
 		},
@@ -213,8 +219,7 @@ func Test_Au10_StreamReader_1Subscription(t *testing.T) {
 }
 
 func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
-	test := newStreamReaderTest(
-		t,
+	test := newStreamReaderTest(t, []string{"topic 1", "topic 2"},
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return binary.BigEndian.Uint32(message.Value), nil
 		},
@@ -298,8 +303,7 @@ func Test_Au10_StreamReader_SeveralSubscriptions(t *testing.T) {
 }
 
 func Test_Au10_StreamReader_Errors(t *testing.T) {
-	test := newStreamReaderTest(
-		t,
+	test := newStreamReaderTest(t, []string{"topic 1", "topic 2"},
 		func(message *sarama.ConsumerMessage) (interface{}, error) {
 			return nil, errors.New("test convert error")
 		},
@@ -326,6 +330,38 @@ func Test_Au10_StreamReader_Errors(t *testing.T) {
 	if !test.assert.Equal(0, len(*messages)) {
 		return
 	}
+}
+
+func Test_Au10_StreamReader_ConsumerErrors_General(t *testing.T) {
+	test := newStreamReaderTest(t, []string{"topic 1", "topic 2"},
+		func(message *sarama.ConsumerMessage) (interface{}, error) {
+			return nil, nil
+		},
+		nil)
+	defer test.close()
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
+	subscription, _ := test.newSubscription(errChan)
+	defer subscription.Close()
+	test.log.EXPECT().Error(
+		`Streams "topic 1, topic 2" reading error: "Consumer error".`)
+	test.consumerErrorsChan <- errors.New("Consumer error")
+}
+
+func Test_Au10_StreamReader_ConsumerErrors_Log(t *testing.T) {
+	test := newStreamReaderTest(t, []string{"topic 1", "log"},
+		func(message *sarama.ConsumerMessage) (interface{}, error) {
+			return nil, nil
+		},
+		nil)
+	defer test.close()
+	errChan := make(chan error, 1)
+	defer close(errChan)
+	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
+	subscription, _ := test.newSubscription(errChan)
+	defer subscription.Close()
+	test.consumerErrorsChan <- errors.New("Consumer error")
 }
 
 func Test_Au10_StreamReader_StartError(test *testing.T) {
@@ -356,7 +392,7 @@ func Test_Au10_StreamReader_StartError(test *testing.T) {
 }
 
 func Test_Au10_StreamReader_NotClosedSubscription(t *testing.T) {
-	test := newStreamReaderTest(t, nil, nil)
+	test := newStreamReaderTest(t, []string{"topic 1", "topic 2"}, nil, nil)
 	defer test.close()
 	test.log.EXPECT().Debug(`Stream reading "%s" opened.`, test.getTopic())
 	test.newSubscription(nil)

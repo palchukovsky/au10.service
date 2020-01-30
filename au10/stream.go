@@ -13,15 +13,16 @@ func NewStreamConfig(service Service) *sarama.Config {
 func (*factory) NewSaramaProducer(
 	service Service,
 	enableSuccesses bool) (sarama.AsyncProducer, error) {
-	confing := NewStreamConfig(service)
-	confing.Producer.Return.Successes = enableSuccesses
-	confing.Producer.Return.Errors = true
-	return sarama.NewAsyncProducer(service.GetStreamBrokers(), confing)
+	config := NewStreamConfig(service)
+	config.Producer.Return.Successes = enableSuccesses
+	config.Producer.Return.Errors = true
+	return sarama.NewAsyncProducer(service.GetStreamBrokers(), config)
 }
 
 func (*factory) NewSaramaConsumer(
 	service Service) (sarama.ConsumerGroup, error) {
 	config := NewStreamConfig(service)
+	config.Consumer.Return.Errors = true
 	return sarama.NewConsumerGroup(
 		service.GetStreamBrokers(), config.ClientID, config)
 }

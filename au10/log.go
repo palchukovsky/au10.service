@@ -47,7 +47,7 @@ type LogReader interface {
 // LogSubscription represents subscription to logger data.
 type LogSubscription interface {
 	Subscription
-	// GetRecordsChan resturns incoming records channel.
+	// GetRecordsChan returns incoming records channel.
 	GetRecordsChan() <-chan LogRecord
 }
 
@@ -72,7 +72,7 @@ type LogRecord interface {
 const logStreamTopic = "log"
 
 func (*factory) NewLog(service Service) (Log, error) {
-	stream, err := service.GetFactory().NewStreamWriter(logStreamTopic,
+	stream, err := service.GetFactory().NewStreamAsyncWriter(logStreamTopic,
 		service)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func (*factory) NewLog(service Service) (Log, error) {
 type logService struct {
 	service    Service
 	membership Membership
-	stream     StreamWriter
+	stream     StreamAsyncWriter
 }
 
 func (service *logService) Close() {
@@ -204,10 +204,6 @@ func (subscription *logSubscription) Close() {
 
 func (subscription *logSubscription) GetRecordsChan() <-chan LogRecord {
 	return subscription.recordsChan
-}
-
-func (subscription *logSubscription) GetErrChan() <-chan error {
-	return subscription.errChan
 }
 
 ////////////////////////////////////////////////////////////////////////////////

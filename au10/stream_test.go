@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_Au10_StreamWriter_NewStreamConfig(test *testing.T) {
+func Test_Au10_NewStreamConfig(test *testing.T) {
 	ctrl := gomock.NewController(test)
 	defer ctrl.Finish()
 	assert := assert.New(test)
@@ -26,7 +26,7 @@ func Test_Au10_StreamWriter_NewStreamConfig(test *testing.T) {
 	assert.True(config.Producer.Return.Errors)
 }
 
-func Test_Au10_StreamWriter_NewSaramaProducer(test *testing.T) {
+func Test_Au10_NewSaramaProducer(test *testing.T) {
 	ctrl := gomock.NewController(test)
 	defer ctrl.Finish()
 	assert := assert.New(test)
@@ -41,7 +41,7 @@ func Test_Au10_StreamWriter_NewSaramaProducer(test *testing.T) {
 	assert.NotNil(err)
 }
 
-func Test_Au10_StreamWriter_NewSaramaConsumer(test *testing.T) {
+func Test_Au10_NewSaramaConsumer(test *testing.T) {
 	ctrl := gomock.NewController(test)
 	defer ctrl.Finish()
 	assert := assert.New(test)

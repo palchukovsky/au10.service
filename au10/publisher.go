@@ -7,7 +7,8 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-const publisherStreamTopic = "pubs"
+const publisherPostsStreamTopic = "pub-posts"
+const publisherMessagesStreamTopic = "pub-messages"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -19,84 +20,170 @@ type Publisher interface {
 	// AddVocal accepts new vocal for publications. The vocal will be published
 	// when the last message will be uploaded.
 	AddVocal(*VocalDeclaration) (Vocal, error)
+	// AppendMessage accepts part of new message to publish. The messages will be
+	// published when the last message part will be added.
+	AppendMessage(MessageID, PostID, User, []byte) error
 }
 
 type publisher struct {
-	membership Membership
-	stream     StreamWriterWithResult
-	log        Log
+	membership     Membership
+	postsStream    StreamSyncWriter
+	messagesStream StreamAsyncWriter
+	log            Log
 }
 
 // NewPublisher creates new post publisher instance.
 func NewPublisher(service Service) (Publisher, error) {
-	stream, err := service.GetFactory().NewStreamWriterWithResult(
-		publisherStreamTopic, service)
+	postsStream, err := service.GetFactory().NewStreamSyncWriter(
+		publisherPostsStreamTopic, service)
 	if err != nil {
 		return nil, err
 	}
-	return &publisher{
-			stream:     stream,
-			membership: NewMembership("", ""),
-			log:        service.Log()},
-		nil
+	result := &publisher{
+		postsStream: postsStream,
+		membership:  NewMembership("", ""),
+		log:         service.Log()}
+	result.messagesStream, err = service.GetFactory().NewStreamAsyncWriter(
+		publisherMessagesStreamTopic, service)
+	if err != nil {
+		postsStream.Close()
+		return nil, err
+	}
+	return result, nil
 }
 
 func (publisher *publisher) Close() {
-	publisher.stream.Close()
+	publisher.messagesStream.Close()
+	publisher.postsStream.Close()
 }
 
 func (publisher *publisher) GetMembership() Membership {
 	return publisher.membership
 }
 
+// PublisherMessageData is a serializable record for a stream that informs about
+// message data.
+type PublisherMessageData struct {
+	Post   PostID    `json:"p"`
+	ID     MessageID `json:"m"`
+	Author UserID    `json:"a"`
+	Data   []byte    `json:"d"`
+}
+
 func (publisher *publisher) AddVocal(
 	vocal *VocalDeclaration) (Vocal, error) {
-	id, time, err := publisher.stream.Push(vocal)
+	id, time, err := publisher.postsStream.Push(vocal)
 	if err != nil {
 		return nil, err
 	}
-	return newVocal(PostID(id), time, vocal), nil
+	return newNewVocal(PostID(id), time, vocal), nil
+}
+
+func (publisher *publisher) AppendMessage(
+	id MessageID, post PostID, user User, data []byte) error {
+	return publisher.messagesStream.PushAsync(&PublisherMessageData{
+		Post: post, ID: id, Author: user.GetID(), Data: data})
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// PublishStream represents the interface to read new post declarations
-// assigned for publication.
-type PublishStream interface {
+// PublishPostsStream represents the interface to read new post assigned
+// for publication.
+type PublishPostsStream interface {
 	Subscription
 	// GetRecordsChan resturns incoming records channel.
 	GetRecordsChan() <-chan Vocal
 }
 
-type publishStreamSingleton struct {
+// PublishMessagesStream represents the interface to read new messages
+// assigned for publication.
+type PublishMessagesStream interface {
+	Subscription
+	// GetRecordsChan resturns incoming records channel.
+	GetRecordsChan() <-chan *PublisherMessageData
+}
+
+type publishPostsStreamSingleton struct {
 	subscription
 	reader      StreamReader
 	stream      StreamSubscription
 	recordsChan chan Vocal
 }
 
-// NewPublishStreamSingleton creates new publish queue stream instance
+// NewPublishPostsStreamSingleton creates new publish queue stream instance
 // singleton (allowed only one instance for a proccess).
-func NewPublishStreamSingleton(service Service) (PublishStream, error) {
+func NewPublishPostsStreamSingleton(
+	service Service) (PublishPostsStream, error) {
 
-	result := &publishStreamSingleton{
+	result := &publishPostsStreamSingleton{
 		subscription: newSubscription(),
 		reader: service.GetFactory().NewStreamReader(
-			[]string{publisherStreamTopic},
+			[]string{publisherPostsStreamTopic},
 			func(source *sarama.ConsumerMessage) (interface{}, error) {
 				var decl VocalDeclaration
 				if err := json.Unmarshal(source.Value, &decl); err != nil {
 					return nil, fmt.Errorf(`failed to parse vocal declaration: "%s"`, err)
 				}
-				return newVocal(PostID(source.Offset), source.Timestamp, &decl), nil
+				return newNewVocal(PostID(source.Offset), source.Timestamp, &decl), nil
 			},
 			service),
 		recordsChan: make(chan Vocal, 1)}
 
 	var err error
 	result.stream, err = result.reader.NewSubscription(
+		func(message interface{}) { result.recordsChan <- message.(Vocal) },
+		result.errChan)
+	if err != nil {
+		result.Close()
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (stream *publishPostsStreamSingleton) Close() {
+	close(stream.recordsChan)
+	if stream.stream != nil {
+		stream.stream.Close()
+	}
+	stream.reader.Close()
+	stream.subscription.close()
+}
+
+func (stream *publishPostsStreamSingleton) GetRecordsChan() <-chan Vocal {
+	return stream.recordsChan
+}
+
+type publishMessagesStreamSingleton struct {
+	subscription
+	reader      StreamReader
+	stream      StreamSubscription
+	recordsChan chan *PublisherMessageData
+}
+
+// NewPublishMessagesStreamSingleton creates new publish queue stream instance
+// singleton (allowed only one instance for a proccess).
+func NewPublishMessagesStreamSingleton(
+	service Service) (PublishMessagesStream, error) {
+
+	result := &publishMessagesStreamSingleton{
+		subscription: newSubscription(),
+		reader: service.GetFactory().NewStreamReader(
+			[]string{publisherMessagesStreamTopic},
+			func(source *sarama.ConsumerMessage) (interface{}, error) {
+				var data PublisherMessageData
+				if err := json.Unmarshal(source.Value, &data); err != nil {
+					return nil, fmt.Errorf(`failed to parse message data: "%s"`, err)
+				}
+				return &data, nil
+			},
+			service),
+		recordsChan: make(chan *PublisherMessageData, 1)}
+
+	var err error
+	result.stream, err = result.reader.NewSubscription(
 		func(message interface{}) {
-			result.recordsChan <- message.(Vocal)
+			result.recordsChan <- message.(*PublisherMessageData)
 		},
 		result.errChan)
 	if err != nil {
@@ -107,7 +194,7 @@ func NewPublishStreamSingleton(service Service) (PublishStream, error) {
 	return result, nil
 }
 
-func (stream *publishStreamSingleton) Close() {
+func (stream *publishMessagesStreamSingleton) Close() {
 	close(stream.recordsChan)
 	if stream.stream != nil {
 		stream.stream.Close()
@@ -116,12 +203,8 @@ func (stream *publishStreamSingleton) Close() {
 	stream.subscription.close()
 }
 
-func (stream *publishStreamSingleton) GetRecordsChan() <-chan Vocal {
+func (stream *publishMessagesStreamSingleton) GetRecordsChan() <-chan *PublisherMessageData {
 	return stream.recordsChan
-}
-
-func (stream *publishStreamSingleton) GetErrChan() <-chan error {
-	return stream.errChan
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	mock_postdb "bitbucket.org/au10/service/mock/postdb"
+
 	"bitbucket.org/au10/service/au10"
 	mock_au10 "bitbucket.org/au10/service/mock/au10"
 	"github.com/Shopify/sarama"
@@ -32,15 +34,17 @@ func Test_Au10_Posts_General(test *testing.T) {
 			}).
 		Return(reader)
 
-	posts := au10.NewPosts(service)
+	db := mock_postdb.NewMockDB(mock)
+
+	posts := au10.NewPosts(service, db)
+	assert.NotNil(posts)
 	defer posts.Close()
 	reader.EXPECT().Close()
 
 	assert.Equal(au10.NewMembership("", ""), posts.GetMembership())
 
-	post, err := posts.GetPost(au10.PostID(1))
-	assert.Nil(post)
-	assert.EqualError(err, "post with ID 1 is nonexistent")
+	queries := posts.GetQueries()
+	assert.NotNil(queries)
 }
 
 func Test_Au10_Posts_Subscription(test *testing.T) {
@@ -62,7 +66,10 @@ func Test_Au10_Posts_Subscription(test *testing.T) {
 		}).
 		Return(reader)
 
-	posts := au10.NewPosts(service)
+	db := mock_postdb.NewMockDB(mock)
+
+	posts := au10.NewPosts(service, db)
+	assert.NotNil(posts)
 	defer posts.Close()
 	reader.EXPECT().Close()
 
@@ -168,23 +175,23 @@ func Test_Au10_Posts_Subscription(test *testing.T) {
 	stopBarrier.Wait()
 }
 
-func Test_Au10_Posts_PostNotifier(test *testing.T) {
+func Test_Au10_PostNotifier(test *testing.T) {
 	mock := gomock.NewController(test)
 	defer mock.Finish()
 	assert := assert.New(test)
 
 	factory := mock_au10.NewMockFactory(mock)
 	service := mock_au10.NewMockService(mock)
-	stream := mock_au10.NewMockStreamWriter(mock)
+	stream := mock_au10.NewMockStreamAsyncWriter(mock)
 	service.EXPECT().GetFactory().MinTimes(1).Return(factory)
 
-	factory.EXPECT().NewStreamWriter("posts", service).
+	factory.EXPECT().NewStreamAsyncWriter("posts", service).
 		Return(stream, errors.New("test stream error"))
 	notifier, err := au10.NewPostNotifier(service)
 	assert.Nil(notifier)
 	assert.EqualError(err, "test stream error")
 
-	factory.EXPECT().NewStreamWriter("posts", service).Return(stream, nil)
+	factory.EXPECT().NewStreamAsyncWriter("posts", service).Return(stream, nil)
 	stream.EXPECT().Close()
 	notifier, err = au10.NewPostNotifier(service)
 	if !assert.NotNil(notifier) {

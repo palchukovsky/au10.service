@@ -107,6 +107,7 @@ func Test_Accesspoint_Service_Methods(t *testing.T) {
 	test.assert.True(test.service.(ap.Service).GetPosts() == test.posts)
 	test.assert.True(test.service.(ap.Service).GetPublisher() == test.publisher)
 	test.assert.True(test.service.(ap.Service).GetUsers() == test.users)
+	test.assert.NotNil(test.service.(ap.Service).Convert())
 	test.assert.Equal(uint32(1), test.service.(ap.Service).RegisterSubscriber())
 	test.assert.Equal(uint32(2), test.service.(ap.Service).RegisterSubscriber())
 	test.assert.Equal(uint32(1), test.service.(ap.Service).UnregisterSubscriber())

@@ -22,8 +22,7 @@ GOLANGCI_VER = 1.23.1
 		build-full \
 		build-builder build-builder-protoc build-builder-golang build-builder-envoy \
 		build-accesspoint build-accesspoint-proxy \
-		build-postdb \
-		build-publisher \
+		build-postdb build-publisher \
 	codecov-branch \
 	release-service release-builder
 
@@ -152,7 +151,7 @@ build: ## Build docker images with all project services from actual local source
 
 build-accesspoint: ## Build access point node docker image from actual local sources.
 	@$(call echo_start)
-	$(call build_docker_service_image,accesspoint,$(IMAGE_TAG_ACCESSPOINT))
+	$(call build_docker_service_image,accesspoint,${IMAGE_TAG_ACCESSPOINT})
 	@$(call echo_success)
 build-accesspoint-proxy: ## Build access point proxy node docker image from actual local sources.
 	@$(call echo_start)
@@ -220,8 +219,8 @@ build-builder-envoy: ## Build docker envoy base image.
 
 release-service: ## Push service images on the hub.
 	@$(call echo_start)
-	docker push $(IMAGE_TAG_ACCESSPOINT)
-	docker push $(IMAGE_TAG_ACCESSPOINT_PROXY)
+	docker push ${IMAGE_TAG_ACCESSPOINT}
+	docker push ${IMAGE_TAG_ACCESSPOINT_PROXY}
 	docker push ${IMAGE_TAG_POSTDB}
 	docker push ${IMAGE_TAG_PUBLISHER}
 	@$(call echo_success)
@@ -265,7 +264,7 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,au10/factory,Factory)
 	$(call gen_mock,au10/service,Service)
 	$(call gen_mock,au10/streamreader,StreamReader)
-	$(call gen_mock,au10/streamwriter,StreamWriter, StreamWriterWithResult)
+	$(call gen_mock,au10/streamwriter,StreamAsyncWriter, StreamSyncWriter)
 	$(call gen_mock_aux,au10/log,Log LogReader LogSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock,au10/member,Memeber)
 	$(call gen_mock,au10/group,Rights Membership)
@@ -275,6 +274,7 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock_aux,au10/posts,Posts PostsSubscription,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/publisher,Publisher,$(CODE_REPO)/au10=au10/subscription.go$(COMMA)$(CODE_REPO)/au10=au10/member.go)
 	$(call gen_mock_aux,au10/message,Message,$(CODE_REPO)/au10=au10/member.go)
+	$(call gen_mock,au10/query,QueryClient)
 
 # "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
 	-go list -e -compiled=true -test=true ./accesspoint/lib/*
@@ -282,6 +282,11 @@ mock: ## Generate mock interfaces for unit-tests.
 	$(call gen_mock,accesspoint/lib/client,Client)
 	$(call gen_mock,accesspoint/lib/grpc,Grpc)
 	$(call gen_mock_ext,$(CODE_REPO)/accesspoint/proto,Au10_ReadLogServer$(COMMA)Au10_ReadPostsServer$(COMMA)Au10_ReadMessageServer,proto)
+	$(call gen_mock,accesspoint/lib/convertor,Convertor)
+
+# "go list ... " in the next run required as a workaround for error - first start mockgen fails with errot at "go list ...":
+	-go list -e -compiled=true -test=true ./postdb/*
+	$(call gen_mock,postdb/db,DB)
 
 	$(call gen_mock_ext,context,Context,context)
 	$(call gen_mock_ext,github.com/Shopify/sarama,AsyncProducer$(COMMA)ConsumerGroup$(COMMA)ConsumerGroupSession$(COMMA)ConsumerGroupClaim,sarama)

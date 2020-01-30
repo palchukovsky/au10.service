@@ -10,7 +10,7 @@ services:
       KAFKA_ADVERTISED_HOST_NAME: stream-broker
       KAFKA_ZOOKEEPER_CONNECT: stream-zookeeper:2181
     ports:
-      - "9092:9092"
+      - 9092:9092
   stream-zookeeper:
     image: wurstmeister/zookeeper:3.4.6
 
@@ -20,32 +20,24 @@ services:
       POSTGRES_DB: posts
       POSTGRES_USER: postdb
       POSTGRES_PASSWORD: pOsTdBsEcReT_123
-  post-db-admin:
-    image: adminer
     ports:
-      - 8081:8080
-  publisher:
-    image: registry.gitlab.com/au10/service.publisher:master
-    depends_on:
-      - stream-broker
-      - post-db
-    command: -name 1 -stream_brokers stream-broker:9092 -db_name posts -db_login postdb -db_password pOsTdBsEcReT_123 -db_host post-db
+      - 5432:5432
 
   accesspoint-1:
     image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
-    command: -name 1 -port 2917 -stream_brokers stream-broker:9092
+    command: -name 1 -port 2917 -stream_brokers stream-broker:9092 -db_name posts -db_login postdb -db_password pOsTdBsEcReT_123 -db_host post-db
   accesspoint-2:
     image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
-    command: -name 2 -port 2917 -stream_brokers stream-broker:9092
+    command: -name 2 -port 2917 -stream_brokers stream-broker:9092 -db_name posts -db_login postdb -db_password pOsTdBsEcReT_123 -db_host post-db
   accesspoint-3:
     image: registry.gitlab.com/au10/service.accesspoint:master
     depends_on:
       - stream-broker
-    command: -name 3 -port 2917 -stream_brokers stream-broker:9092
+    command: -name 3 -port 2917 -stream_brokers stream-broker:9092 -db_name posts -db_login postdb -db_password pOsTdBsEcReT_123 -db_host post-db
   accesspoint-proxy:
     image: registry.gitlab.com/au10/service.accesspoint-proxy:master
     depends_on:
@@ -64,3 +56,8 @@ services:
         published: 443
         protocol: tcp
         mode: host
+
+  db-admin:
+    image: adminer
+    ports:
+      - 8081:8080

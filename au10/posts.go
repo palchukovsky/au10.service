@@ -4,27 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"bitbucket.org/au10/service/postdb"
 	"github.com/Shopify/sarama"
 )
 
 // Posts describes post database service.
 type Posts interface {
 	Member
-
 	// Close closes the service.
 	Close()
-
-	// GetPost returns post by ID.
-	GetPost(PostID) (Post, error)
-
 	// Subscribe creates a subscription to posts.
 	Subscribe() (PostsSubscription, error)
+	// GetQueries returns post queries client.
+	GetQueries() QueryClient
 }
 
 // PostsSubscription represents subscription to posts.
 type PostsSubscription interface {
 	Subscription
-	// GetRecordsChan resturns incoming records channel.
+	// GetRecordsChan returns incoming records channel.
 	GetRecordsChan() <-chan Post
 }
 
@@ -39,7 +37,7 @@ type PostNotifier interface {
 ////////////////////////////////////////////////////////////////////////////////
 
 // NewPosts creates new posts service instance.
-func NewPosts(service Service) Posts {
+func NewPosts(service Service, db postdb.DB) Posts {
 	return &posts{
 		membership: NewMembership("", ""),
 		stream: service.GetFactory().NewStreamReader(
@@ -47,7 +45,8 @@ func NewPosts(service Service) Posts {
 			func(source *sarama.ConsumerMessage) (interface{}, error) {
 				return ConvertSaramaMessageIntoVocal(source)
 			},
-			service)}
+			service),
+		queries: NewQueryClient(db)}
 }
 
 const postsStreamTopic = "posts"
@@ -55,17 +54,16 @@ const postsStreamTopic = "posts"
 type posts struct {
 	membership Membership
 	stream     StreamReader
+	queries    QueryClient
 }
 
 func (posts *posts) Close() {
 	posts.stream.Close()
+	posts.queries.Close()
 }
 
 func (posts *posts) GetMembership() Membership { return posts.membership }
-
-func (posts *posts) GetPost(id PostID) (Post, error) {
-	return nil, fmt.Errorf("post with ID %d is nonexistent", id)
-}
+func (posts *posts) GetQueries() QueryClient   { return posts.queries }
 
 func (posts *posts) Subscribe() (PostsSubscription, error) {
 
@@ -105,19 +103,15 @@ func (subscription *postsSubscription) GetRecordsChan() <-chan Post {
 	return subscription.postsChan
 }
 
-func (subscription *postsSubscription) GetErrChan() <-chan error {
-	return subscription.errChan
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 type postNotifier struct {
-	stream StreamWriter
+	stream StreamAsyncWriter
 }
 
 // NewPostNotifier creates new post notifier instance.
 func NewPostNotifier(service Service) (PostNotifier, error) {
-	stream, err := service.GetFactory().NewStreamWriter(postsStreamTopic,
+	stream, err := service.GetFactory().NewStreamAsyncWriter(postsStreamTopic,
 		service)
 	if err != nil {
 		return nil, err

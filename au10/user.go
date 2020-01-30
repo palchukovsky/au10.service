@@ -13,19 +13,23 @@ type User interface {
 	GetLogin() string
 	//GetRights returns groups with which user allows to work.
 	GetRights() []Rights
+	// BlockByProtocolMismatch blocks user by reason "wrong protocol" (flooding,
+	// spaming, sequence mismatch and so on).
+	BlockByProtocolMismatch()
 }
 
 func (*factory) NewUser(
 	id UserID,
 	login string,
 	membership Membership,
-	rights []Rights) (User, error) {
-
+	rights []Rights,
+	service Service) (User, error) {
 	r := &user{
 		id:         id,
 		login:      login,
 		membership: membership,
-		rights:     append([]Rights(nil), rights...)}
+		rights:     append([]Rights(nil), rights...),
+		service:    service}
 	return r, nil
 }
 
@@ -34,12 +38,14 @@ type user struct {
 	login      string
 	membership Membership
 	rights     []Rights
+	service    Service
 }
 
 func (u *user) GetID() UserID             { return u.id }
 func (u *user) GetLogin() string          { return u.login }
 func (u *user) GetMembership() Membership { return u.membership }
+func (u *user) GetRights() []Rights       { return u.rights }
 
-func (u *user) GetRights() []Rights {
-	return append([]Rights(nil), u.rights...)
+func (u *user) BlockByProtocolMismatch() {
+	u.service.Log().Warn("User %d blocked by protocol mismatch.", u.id)
 }

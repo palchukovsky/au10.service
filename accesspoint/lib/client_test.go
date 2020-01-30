@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	fmt "fmt"
-	"reflect"
 	"testing"
-	"time"
 
 	ap "bitbucket.org/au10/service/accesspoint/lib"
 	proto "bitbucket.org/au10/service/accesspoint/proto"
@@ -33,19 +31,19 @@ func Test_Accesspoint_Client_Log(test *testing.T) {
 	service.EXPECT().Log().Times(4).Return(log)
 
 	user.EXPECT().GetID().Return(au10.UserID(1))
-	log.EXPECT().Error("[Test.123.1] test error record %s", "argument")
+	log.EXPECT().Error("[Test/123/1] test error record %s", "argument")
 	client.LogError("test error record %s", "argument")
 
 	user.EXPECT().GetID().Return(au10.UserID(2))
-	log.EXPECT().Warn("[Test.123.2] test warn record %s", "argument")
+	log.EXPECT().Warn("[Test/123/2] test warn record %s", "argument")
 	client.LogWarn("test warn record %s", "argument")
 
 	user.EXPECT().GetID().Return(au10.UserID(3))
-	log.EXPECT().Info("[Test.123.3] test info record %s", "argument")
+	log.EXPECT().Info("[Test/123/3] test info record %s", "argument")
 	client.LogInfo("test info record %s", "argument")
 
 	user.EXPECT().GetID().Return(au10.UserID(4))
-	log.EXPECT().Debug("[Test.123.4] test debug record %s", "argument")
+	log.EXPECT().Debug("[Test/123/4] test debug record %s", "argument")
 	client.LogDebug("test debug record %s", "argument")
 }
 
@@ -53,6 +51,7 @@ type clientTest struct {
 	mock          *gomock.Controller
 	assert        *assert.Assertions
 	service       *mock_ap.MockService
+	convert       *mock_ap.MockConvertor
 	log           *mock_au10.MockLog
 	user          *mock_au10.MockUser
 	logMembership *mock_au10.MockMembership
@@ -68,12 +67,14 @@ func newClientTest(test *testing.T) *clientTest {
 			au10.NewRights("x1", "z1"),
 			au10.NewRights("x2", "z2")}}
 	result.service = mock_ap.NewMockService(result.mock)
+	result.convert = mock_ap.NewMockConvertor(result.mock)
 	result.log = mock_au10.NewMockLog(result.mock)
 	result.user = mock_au10.NewMockUser(result.mock)
 	result.logMembership = mock_au10.NewMockMembership(result.mock)
 	result.client = ap.NewClient(345, "Test", result.user, result.service)
 
 	result.service.EXPECT().Log().AnyTimes().Return(result.log)
+	result.service.EXPECT().Convert().AnyTimes().Return(result.convert)
 	result.log.EXPECT().GetMembership().AnyTimes().Return(result.logMembership)
 	result.user.EXPECT().GetID().AnyTimes().Return(au10.UserID(836))
 	result.user.EXPECT().GetRights().AnyTimes().Return(result.rights)
@@ -94,7 +95,7 @@ func (test *clientTest) testPermissionDenied(
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	test.log.EXPECT().Error(
 		fmt.Sprintf(
-			"[Test.345.836] Permission denied for %s (RPC error %%d).",
+			"[Test/345/836] Permission denied for %s (RPC error %%d).",
 			action),
 		codes.PermissionDenied)
 	response, err := run()
@@ -115,7 +116,7 @@ func (test *clientTest) testSubscribeError(
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	prepareErr(errors.New("test subscribe error"))
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to subscribe: "test subscribe error" (RPC error %d).`,
+		`[Test/345/836] Failed to subscribe: "test subscribe error" (RPC error %d).`,
 		codes.Internal)
 	response, err := run()
 	test.assert.Nil(response)
@@ -123,57 +124,8 @@ func (test *clientTest) testSubscribeError(
 
 }
 
-func (test *clientTest) testNumberOfStructFields(
-	s interface{}, numberOfFields int) {
-	test.assert.Equal(numberOfFields,
-		reflect.Indirect(reflect.ValueOf(s)).NumField())
-}
-
-func (test *clientTest) testNumberOfProtoStructFields(
-	s interface{}, numberOfFields int) {
-	test.testNumberOfStructFields(s, numberOfFields+3)
-}
-
-func (test *clientTest) expectVocalConvertion(
-	secondMessageKind au10.MessageKind) *mock_au10.MockVocal {
-	result := mock_au10.NewMockVocal(test.mock)
-	result.EXPECT().GetID().MinTimes(1).Return(au10.PostID(987))
-	result.EXPECT().GetTime().Return(time.Unix(0, 567))
-	result.EXPECT().GetLocation().Return(
-		&au10.GeoPoint{Latitude: 123.456, Longitude: 456.789})
-	message1 := mock_au10.NewMockMessage(test.mock)
-	message1.EXPECT().GetID().Return(au10.MessageID(890))
-	message1.EXPECT().GetKind().Return(au10.MessageKindText)
-	message1.EXPECT().GetSize().Return(uint32(564))
-	message2 := mock_au10.NewMockMessage(test.mock)
-	message2.EXPECT().GetID().Return(au10.MessageID(892))
-	message2.EXPECT().GetKind().Return(secondMessageKind)
-	message2.EXPECT().GetSize().Return(uint32(565))
-	result.EXPECT().GetMessages().Return([]au10.Message{message1, message2})
-	return result
-}
-
-func (test *clientTest) validateExpectedVocalConvertion(vocal *proto.Vocal) {
-	test.assert.NotNil(vocal)
-	test.assert.Equal("987", vocal.Post.Id)
-	test.assert.Equal(int64(567), vocal.Post.Time)
-	test.assert.Equal(123.456, vocal.Post.Location.Latitude)
-	test.assert.Equal(456.789, vocal.Post.Location.Longitude)
-	test.testNumberOfProtoStructFields(vocal.Post.Location, 2)
-	test.assert.Equal([]*proto.Message{
-		&proto.Message{
-			Id: "890", Kind: proto.Message_TEXT, Size: uint32(564)},
-		&proto.Message{
-			Id: "892", Kind: proto.Message_TEXT, Size: uint32(565)}},
-		vocal.Post.Messages)
-	test.assert.Equal(1, len(proto.Message_Kind_value))
-	test.testNumberOfProtoStructFields(vocal.Post.Messages[0], 3)
-	test.testNumberOfProtoStructFields(vocal.Post, 4)
-	test.testNumberOfProtoStructFields(vocal, 1)
-}
-
 func (test *clientTest) testSubscription(
-	prepare func(*ap.SubscriptionInfo),
+	prepare func(subscriptionInfo *ap.SubscriptionInfo, isErrData bool),
 	run func(ctx context.Context, isErrData bool) error,
 	createData func(),
 	createErrorData []struct {
@@ -191,14 +143,14 @@ func (test *clientTest) testSubscription(
 	ctx.EXPECT().Done().MinTimes(1).Return(ctxDoneChan)
 
 	subscriptionInfo := &ap.SubscriptionInfo{NumberOfSubscribers: 101}
-	test.testNumberOfStructFields(subscriptionInfo, 1)
+	testNumberOfStructFields(test.assert, subscriptionInfo, 1)
 
-	test.log.EXPECT().Debug("[Test.345.836] Canceled (%d/%d).",
+	test.log.EXPECT().Debug("[Test/345/836] Canceled (%d/%d).",
 		uint32(101), uint32(909)).
-		After(test.log.EXPECT().Debug("[Test.345.836] Subscribed (%d/%d).",
+		After(test.log.EXPECT().Debug("[Test/345/836] Subscribed (%d/%d).",
 			uint32(102), uint32(808)))
 
-	prepare(subscriptionInfo)
+	prepare(subscriptionInfo, false)
 
 	test.service.EXPECT().UnregisterSubscriber().Return(uint32(909)).After(
 		test.service.EXPECT().RegisterSubscriber().Return(uint32(808)))
@@ -214,12 +166,12 @@ func (test *clientTest) testSubscription(
 	subscriptionInfo.NumberOfSubscribers = 201
 
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed: "test subscription error" (201/2909) (RPC error %d).`,
+		`[Test/345/836] Failed: "test subscription error" (201/2909) (RPC error %d).`,
 		codes.Internal).
-		After(test.log.EXPECT().Debug("[Test.345.836] Subscribed (%d/%d).",
+		After(test.log.EXPECT().Debug("[Test/345/836] Subscribed (%d/%d).",
 			uint32(202), uint32(2808)))
 
-	prepare(subscriptionInfo)
+	prepare(subscriptionInfo, false)
 
 	test.service.EXPECT().UnregisterSubscriber().Return(uint32(2909)).After(
 		test.service.EXPECT().RegisterSubscriber().Return(uint32(2808)))
@@ -236,12 +188,12 @@ func (test *clientTest) testSubscription(
 
 	subscriptionInfo.NumberOfSubscribers = 301
 
-	test.log.EXPECT().Debug("[Test.345.836] Canceled (%d/%d).",
+	test.log.EXPECT().Debug("[Test/345/836] Canceled (%d/%d).",
 		uint32(301), uint32(3909)).
-		After(test.log.EXPECT().Debug("[Test.345.836] Subscribed (%d/%d).",
+		After(test.log.EXPECT().Debug("[Test/345/836] Subscribed (%d/%d).",
 			uint32(302), uint32(3808)))
 
-	prepare(subscriptionInfo)
+	prepare(subscriptionInfo, false)
 
 	test.service.EXPECT().UnregisterSubscriber().Return(uint32(3909)).After(
 		test.service.EXPECT().RegisterSubscriber().Return(uint32(3808)))
@@ -259,12 +211,12 @@ func (test *clientTest) testSubscription(
 	for _, dataMock := range createErrorData {
 
 		test.log.EXPECT().Error(
-			`[Test.345.836] Failed: "`+dataMock.errText+`" (401/4909) (RPC error %d).`,
+			`[Test/345/836] Failed: "`+dataMock.errText+`" (401/4909) (RPC error %d).`,
 			codes.Internal).
-			After(test.log.EXPECT().Debug("[Test.345.836] Subscribed (%d/%d).",
+			After(test.log.EXPECT().Debug("[Test/345/836] Subscribed (%d/%d).",
 				uint32(402), uint32(4808)))
 
-		prepare(subscriptionInfo)
+		prepare(subscriptionInfo, true)
 
 		test.service.EXPECT().UnregisterSubscriber().Return(uint32(4909)).After(
 			test.service.EXPECT().RegisterSubscriber().Return(uint32(4808)))
@@ -279,183 +231,37 @@ func (test *clientTest) testSubscription(
 	}
 }
 
-func (test *clientTest) prepareMessageExecution() *mock_au10.MockMessage {
-	messageMembership := mock_au10.NewMockMembership(test.mock)
-	messageMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
-
-	message := mock_au10.NewMockMessage(test.mock)
-	message.EXPECT().GetID().MinTimes(1).Return(au10.MessageID(456))
-	message.EXPECT().GetMembership().MinTimes(1).Return(messageMembership)
-
-	postMembership := mock_au10.NewMockMembership(test.mock)
-	postMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
-
-	post := mock_au10.NewMockPost(test.mock)
-	post.EXPECT().GetMembership().MinTimes(1).Return(postMembership)
-	post.EXPECT().GetMessages().MinTimes(1).Return([]au10.Message{message})
-
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	postsMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
-
-	posts := mock_au10.NewMockPosts(test.mock)
-	posts.EXPECT().GetMembership().MinTimes(1).Return(postsMembership)
-	posts.EXPECT().GetPost(au10.PostID(123)).MinTimes(1).Return(post, nil)
-
-	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
-
-	return message
-}
-
-func testClientMessagePermissionDenied(
-	t *testing.T,
-	action string,
-	run func(client ap.Client, postID, messageID string) (interface{}, error)) {
-
-	test := newClientTest(t)
-	defer test.close()
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Permission denied for message "123"/"456" (RPC error %d).`,
-		codes.PermissionDenied)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	messageMembership := mock_au10.NewMockMembership(test.mock)
-	messageMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message := mock_au10.NewMockMessage(test.mock)
-	message.EXPECT().GetID().Return(au10.MessageID(456))
-	message.EXPECT().GetMembership().Return(messageMembership)
-	postMembership := mock_au10.NewMockMembership(test.mock)
-	postMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	post := mock_au10.NewMockPost(test.mock)
-	post.EXPECT().GetMembership().Return(postMembership)
-	post.EXPECT().GetMessages().Return([]au10.Message{message})
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	posts := mock_au10.NewMockPosts(test.mock)
-	posts.EXPECT().GetMembership().Return(postsMembership)
-	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
-	test.service.EXPECT().GetPosts().Return(posts)
-	response, err := run(test.client, "123", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Permission denied for post "123"/"456" (RPC error %d).`,
-		codes.PermissionDenied)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	postMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	post.EXPECT().GetMembership().Return(postMembership)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	posts.EXPECT().GetMembership().Return(postsMembership)
-	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
-	test.service.EXPECT().GetPosts().Return(posts)
-	response, err = run(test.client, "123", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
-
-	test.log.EXPECT().Error(
-		"[Test.345.836] Permission denied for posts (RPC error %d).",
-		codes.PermissionDenied)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	posts.EXPECT().GetMembership().Return(postsMembership)
-	test.service.EXPECT().GetPosts().Return(posts)
-	response, err = run(test.client, "123", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
-}
-
-func testClientMessageInvalidArgument(
-	t *testing.T,
-	action string,
-	run func(client ap.Client, postID, messageID string) (interface{}, error)) {
-
-	test := newClientTest(t)
-	defer test.close()
-
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	postsMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
-	posts := mock_au10.NewMockPosts(test.mock)
-	posts.EXPECT().GetMembership().MinTimes(1).Return(postsMembership)
-	test.service.EXPECT().GetPosts().MinTimes(1).Return(posts)
-	test.logMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(false)
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to parse post ID "---"/"456": "strconv.ParseUint: parsing "---": invalid syntax" (RPC error %d).`,
-		codes.InvalidArgument)
-	response, err := run(test.client, "---", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to get post "123"/"456": "test error" (RPC error %d).`,
-		codes.InvalidArgument)
-	posts.EXPECT().GetPost(au10.PostID(123)).Return(nil, errors.New("test error"))
-	response, err = run(test.client, "123", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to parse message ID "123"/"abc": "strconv.ParseUint: parsing "abc": invalid syntax" (RPC error %d).`,
-		codes.InvalidArgument)
-	response, err = run(test.client, "123", "abc")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to find message "123"/"456" (RPC error %d).`,
-		codes.InvalidArgument)
-	message := mock_au10.NewMockMessage(test.mock)
-	message.EXPECT().GetID().Return(au10.MessageID(987))
-	postMembership := mock_au10.NewMockMembership(test.mock)
-	postMembership.EXPECT().IsAllowed(test.rights).Return(true)
-	post := mock_au10.NewMockPost(test.mock)
-	post.EXPECT().GetMembership().Return(postMembership)
-	post.EXPECT().GetMessages().Return([]au10.Message{message})
-	posts.EXPECT().GetPost(au10.PostID(123)).Return(post, nil)
-	response, err = run(test.client, "123", "456")
-	test.assert.Nil(response)
-	test.assert.EqualError(err,
-		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
-}
-
 func Test_Accesspoint_Client_RegisterError(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
 
-	test.log.EXPECT().Error("[Test.345.836] Test error full text (RPC error %d).",
+	test.log.EXPECT().Error("[Test/345/836] Test error full text (RPC error %d).",
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	err := test.client.RegisterError(codes.Internal, "test error full text")
 	test.assert.EqualError(err,
 		"rpc error: code = Internal desc = INTERNAL")
 
-	test.log.EXPECT().Error("[Test.345.836] Test error full text 2 (RPC error %d).",
+	test.log.EXPECT().Error("[Test/345/836] RPC error %d.", codes.Code(18))
+	test.log.EXPECT().Error(
+		"[Test/345/836] Failed to find external description for status code %d.",
+		codes.Code(18))
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	err = test.client.RegisterError(codes.Code(18), "")
+	test.assert.EqualError(err, "rpc error: code = Code(18) desc = unknown error")
+
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error("[Test/345/836] Test error full text 2 (RPC error %d).",
 		codes.InvalidArgument)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(true)
 	err = test.client.RegisterError(codes.InvalidArgument, "test error full text 2")
 	test.assert.EqualError(err,
 		"rpc error: code = InvalidArgument desc = test error full text 2")
-
-	test.log.EXPECT().Error("[Test.345.836] RPC error %d.", codes.Code(18))
-	test.log.EXPECT().Error(
-		"[Test.345.836] Failed to find external description for status code %d.",
-		codes.Code(18))
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	err = test.client.RegisterError(codes.Code(18), "")
-	test.assert.EqualError(err, "rpc error: code = Code(18) desc = unknown error")
 }
 
 func Test_Accesspoint_Client_Auth(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
-
-	test.testNumberOfProtoStructFields(&proto.AuthRequest{}, 1)
 
 	users := mock_au10.NewMockUsers(test.mock)
 	test.service.EXPECT().GetUsers().Times(3).Return(users)
@@ -467,7 +273,7 @@ func Test_Accesspoint_Client_Auth(t *testing.T) {
 		Return(user, &testToken, errors.New("test error"))
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to auth "test login x": "test error" (RPC error %d).`,
+		`[Test/345/836] Failed to auth "test login x": "test error" (RPC error %d).`,
 		codes.Internal)
 	token, err := test.client.Auth(&proto.AuthRequest{Login: "test login x"})
 	test.assert.Nil(token)
@@ -475,14 +281,14 @@ func Test_Accesspoint_Client_Auth(t *testing.T) {
 
 	users.EXPECT().Auth("test login x2").Return(user, nil, nil)
 	test.log.EXPECT().Info(
-		`[Test.345.836] Wrong creds for "%s"`, "test login x2")
+		`[Test/345/836] Wrong creds for "%s"`, "test login x2")
 	token, err = test.client.Auth(&proto.AuthRequest{Login: "test login x2"})
 	test.assert.Nil(token)
 	test.assert.NoError(err)
 
 	users.EXPECT().Auth("test login x3").Return(user, &testToken, nil)
 	user.EXPECT().GetID().Return(au10.UserID(1))
-	test.log.EXPECT().Info(`[Test.345.1] Authed "%s" (was %d).`,
+	test.log.EXPECT().Info(`[Test/345/1] Authed "%s" (was %d).`,
 		"test login x3", au10.UserID(836))
 	token, err = test.client.Auth(&proto.AuthRequest{Login: "test login x3"})
 	test.assert.NotNil(token)
@@ -510,18 +316,22 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 		},
 		"log")
 
+	sourceRecord := mock_au10.NewMockLogRecord(test.mock)
+	protoRecord := &proto.LogRecord{SeqNum: 97531}
+
 	var recordsChan chan au10.LogRecord
 	var errChan chan error
 	test.testSubscription(
-		func(subscriptionInfo *ap.SubscriptionInfo) {
+		func(subscriptionInfo *ap.SubscriptionInfo, isErrData bool) {
 			test.service.EXPECT().GetLogSubscriptionInfo().Return(subscriptionInfo)
+			test.convert.EXPECT().LogRecordToProto(sourceRecord).Return(protoRecord)
+			recordsChan = make(chan au10.LogRecord)
 		},
 		func(ctx context.Context, isErrData bool) error {
 			test.assert.False(isErrData)
 			subscription := mock_au10.NewMockLogSubscription(test.mock)
 			errChan = make(chan error)
 			subscription.EXPECT().GetErrChan().MinTimes(1).Return(errChan)
-			recordsChan = make(chan au10.LogRecord)
 			subscription.EXPECT().GetRecordsChan().MinTimes(1).Return(recordsChan)
 			subscription.EXPECT().Close().Do(func() {
 				if recordsChan != nil {
@@ -531,28 +341,11 @@ func Test_Accesspoint_Client_ReadLog(t *testing.T) {
 			})
 			logReader.EXPECT().Subscribe().Return(subscription, nil)
 			membership.EXPECT().IsAllowed(test.rights).Return(true)
-			response.EXPECT().Send(gomock.Any()).Do(func(record *proto.LogRecord) {
-				test.assert.Equal(int64(987), record.SeqNum)
-				test.assert.Equal(int64(567), record.Time)
-				test.assert.Equal("test log record", record.Text)
-				test.assert.Equal("debug", record.Severity)
-				test.assert.Equal("test node type", record.NodeType)
-				test.assert.Equal("test node name", record.NodeName)
-				test.testNumberOfProtoStructFields(record, 6)
-			}).Return(nil)
+			response.EXPECT().Send(protoRecord).Return(nil)
 			response.EXPECT().Context().Return(ctx)
 			return test.client.ReadLog(nil, response)
 		},
-		func() {
-			record := mock_au10.NewMockLogRecord(test.mock)
-			record.EXPECT().GetSequenceNumber().Return(int64(987))
-			record.EXPECT().GetTime().Return(time.Unix(0, 567))
-			record.EXPECT().GetText().Return("test log record")
-			record.EXPECT().GetSeverity().Return("debug")
-			record.EXPECT().GetNodeType().Return("test node type")
-			record.EXPECT().GetNodeName().Return("test node name")
-			recordsChan <- record
-		},
+		func() { recordsChan <- sourceRecord },
 		nil,
 		func(err error) { errChan <- err },
 		func() {
@@ -581,17 +374,24 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 		},
 		"posts")
 
+	sourceRecord := mock_au10.NewMockVocal(test.mock)
+	protoRecord := &proto.Vocal{Post: &proto.Post{Id: "8193"}}
+
 	var postsChan chan au10.Post
 	var errChan chan error
 	test.testSubscription(
-		func(subscriptionInfo *ap.SubscriptionInfo) {
+		func(subscriptionInfo *ap.SubscriptionInfo, isErrData bool) {
 			test.service.EXPECT().GetPostsSubscriptionInfo().Return(subscriptionInfo)
+			if !isErrData {
+				test.convert.EXPECT().VocalToProto(sourceRecord, gomock.Any()).
+					Return(protoRecord)
+			}
+			postsChan = make(chan au10.Post)
 		},
 		func(ctx context.Context, isErrData bool) error {
 			subscription := mock_au10.NewMockPostsSubscription(test.mock)
 			errChan = make(chan error)
 			subscription.EXPECT().GetErrChan().MinTimes(1).Return(errChan)
-			postsChan = make(chan au10.Post)
 			subscription.EXPECT().GetRecordsChan().MinTimes(1).Return(postsChan)
 			subscription.EXPECT().Close().Do(func() {
 				if postsChan != nil {
@@ -602,17 +402,14 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 			posts.EXPECT().Subscribe().Return(subscription, nil)
 			postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
 			if !isErrData {
-				response.EXPECT().Send(gomock.Any()).Do(func(post *proto.PostUpdate) {
-					test.assert.IsType((*proto.PostUpdate_Vocal)(nil), post.Post)
-					test.validateExpectedVocalConvertion(
-						post.Post.(*proto.PostUpdate_Vocal).Vocal)
-					test.testNumberOfProtoStructFields(post, 1)
-				}).Return(nil)
+				response.EXPECT().Send(&proto.PostUpdate{
+					Post: &proto.PostUpdate_Vocal{Vocal: protoRecord}}).
+					Return(nil)
 			}
 			response.EXPECT().Context().Return(ctx)
 			return test.client.ReadPosts(nil, response)
 		},
-		func() { postsChan <- test.expectVocalConvertion(au10.MessageKindText) },
+		func() { postsChan <- sourceRecord },
 		[]struct {
 			errText string
 			run     func()
@@ -620,13 +417,9 @@ func Test_Accesspoint_Client_ReadPosts(t *testing.T) {
 			struct {
 				errText string
 				run     func()
-			}{errText: `unknown post type "<nil>"`, run: func() { postsChan <- nil }},
-			struct {
-				errText string
-				run     func()
 			}{
-				errText: "unknown au10 message kind 1",
-				run:     func() { postsChan <- test.expectVocalConvertion(1) }}},
+				errText: `unknown post type "<nil>"`,
+				run:     func() { postsChan <- nil }}},
 		func(err error) { errChan <- err },
 		func() {
 			close(postsChan)
@@ -639,7 +432,7 @@ func Test_Accesspoint_Client_AddVocal_PermissionDenied(t *testing.T) {
 	defer test.close()
 
 	test.log.EXPECT().Error(
-		"[Test.345.836] Permission denied for publishing (RPC error %d).",
+		"[Test/345/836] Permission denied for publishing (RPC error %d).",
 		codes.PermissionDenied)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 
@@ -652,9 +445,10 @@ func Test_Accesspoint_Client_AddVocal_PermissionDenied(t *testing.T) {
 	test.service.EXPECT().GetPublisher().Return(publisher)
 
 	request := &proto.VocalAddRequest{
-		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
+		Post: &proto.PostAddRequest{Location: &proto.GeoPoint{Latitude: 9193.42}}}
+	test.convert.EXPECT().
+		VocalDeclarationFromProto(request, test.user, gomock.Any()).
+		Return(&au10.VocalDeclaration{})
 
 	response, err := test.client.AddVocal(request)
 	test.assert.Nil(response)
@@ -662,19 +456,28 @@ func Test_Accesspoint_Client_AddVocal_PermissionDenied(t *testing.T) {
 		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
 }
 
-func Test_Accesspoint_Client_AddVocal_InvalidArgument(t *testing.T) {
+func Test_Accesspoint_Client_AddVocal_ConvertError(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
+
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to convert message kind: "unknown proto message kind 1" (RPC error %d).`,
+		`[Test/345/836] Failed to convert vocal declaraton: "test error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
 	request := &proto.VocalAddRequest{
 		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{
-				&proto.PostAddRequest_MessageDeclaration{Kind: proto.Message_TEXT},
-				&proto.PostAddRequest_MessageDeclaration{Kind: 1}}}}
+			Location: &proto.GeoPoint{Latitude: 5935.63}}}
+	test.convert.EXPECT().
+		VocalDeclarationFromProto(request, test.user, gomock.Any()).
+		Do(func(source *proto.VocalAddRequest,
+			user au10.User,
+			err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error")
+		}).
+		Return(nil)
+
 	response, err := test.client.AddVocal(request)
 	test.assert.Nil(response)
 	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
@@ -684,78 +487,75 @@ func Test_Accesspoint_Client_AddVocal_Execution(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
 
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-
-	vocalDeclaration := &au10.VocalDeclaration{
-		PostDeclaration: au10.PostDeclaration{
-			Author:   836,
-			Location: &au10.GeoPoint{Latitude: 123.456, Longitude: 456.789},
-			Messages: []*au10.MessageDeclaration{
-				&au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 123},
-				&au10.MessageDeclaration{Kind: au10.MessageKindText, Size: 456}}}}
-	test.testNumberOfStructFields(vocalDeclaration, 1)
-	test.testNumberOfStructFields(&au10.PostDeclaration{}, 3)
-	test.testNumberOfStructFields(vocalDeclaration.Location, 2)
-	test.testNumberOfStructFields(&au10.MessageDeclaration{}, 2)
-
-	publisher := mock_au10.NewMockPublisher(test.mock)
-	publisher.EXPECT().GetMembership().Return(postsMembership)
-	publisher.EXPECT().AddVocal(vocalDeclaration).
-		Return(test.expectVocalConvertion(au10.MessageKindText), nil)
-	test.service.EXPECT().GetPublisher().Return(publisher)
+	publisherMembership := mock_au10.NewMockMembership(test.mock)
+	publisherMembership.EXPECT().IsAllowed(test.rights).Return(true)
 
 	request := &proto.VocalAddRequest{
 		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{Latitude: 123.456, Longitude: 456.789},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{
-				&proto.PostAddRequest_MessageDeclaration{
-					Kind: proto.Message_TEXT,
-					Size: 123},
-				&proto.PostAddRequest_MessageDeclaration{
-					Kind: proto.Message_TEXT,
-					Size: 456}}}}
-	test.assert.Equal(1, len(proto.Message_Kind_name))
-	test.testNumberOfProtoStructFields(request, 1)
-	test.testNumberOfProtoStructFields(request.Post, 2)
-	test.testNumberOfProtoStructFields(request.Post.Messages[0], 2)
+			Location: &proto.GeoPoint{Latitude: 987.123}}}
+	vocalDeclaration := &au10.VocalDeclaration{}
+	test.convert.EXPECT().
+		VocalDeclarationFromProto(request, test.user, gomock.Any()).
+		Return(vocalDeclaration)
 
-	test.log.EXPECT().Debug(`[Test.345.836] Vocal %d added.`, au10.PostID(987))
+	vocal := mock_au10.NewMockVocal(test.mock)
+	vocal.EXPECT().GetID().Return(au10.PostID(987))
+	response := &proto.Vocal{}
+	test.convert.EXPECT().
+		VocalToProto(vocal, gomock.Any()).
+		Return(response)
 
-	response, err := test.client.AddVocal(request)
-	test.validateExpectedVocalConvertion(response)
-	test.testNumberOfProtoStructFields(response, 1)
+	publisher := mock_au10.NewMockPublisher(test.mock)
+	publisher.EXPECT().GetMembership().Return(publisherMembership)
+	publisher.EXPECT().AddVocal(vocalDeclaration).
+		Return(vocal, nil)
+	test.service.EXPECT().GetPublisher().Return(publisher)
+
+	test.log.EXPECT().Debug(`[Test/345/836] Added vocal %d.`, au10.PostID(987))
+
+	actualResponse, err := test.client.AddVocal(request)
 	test.assert.NoError(err)
+	test.assert.True(actualResponse == response)
 }
 
 func Test_Accesspoint_Client_AddVocal_ExecutionUnknownResult(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
 
-	postsMembership := mock_au10.NewMockMembership(test.mock)
-	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)
-
-	publisher := mock_au10.NewMockPublisher(test.mock)
-
 	request := &proto.VocalAddRequest{
 		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
+			Location: &proto.GeoPoint{Latitude: 987.123}}}
+	vocalDeclaration := &au10.VocalDeclaration{}
+	test.convert.EXPECT().
+		VocalDeclarationFromProto(request, test.user, gomock.Any()).
+		Return(vocalDeclaration)
 
-	publisher.EXPECT().GetMembership().Return(postsMembership)
-	publisher.EXPECT().AddVocal(gomock.Any()).
-		Return(test.expectVocalConvertion(1), nil)
+	vocal := mock_au10.NewMockVocal(test.mock)
+	vocal.EXPECT().GetID().Return(au10.PostID(987))
+	test.convert.EXPECT().
+		VocalToProto(vocal, gomock.Any()).
+		Do(func(source au10.Vocal, err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error")
+		}).
+		Return(&proto.Vocal{})
+
+	publisherMembership := mock_au10.NewMockMembership(test.mock)
+	publisherMembership.EXPECT().IsAllowed(test.rights).Return(true)
+	publisher := mock_au10.NewMockPublisher(test.mock)
+	publisher.EXPECT().GetMembership().Return(publisherMembership)
+	publisher.EXPECT().AddVocal(gomock.Any()).Return(vocal, nil)
 	test.service.EXPECT().GetPublisher().Return(publisher)
 
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to convert vocal: "unknown au10 message kind 1" (RPC error %d).`,
+		`[Test/345/836] Failed to convert vocal: "test error" (RPC error %d).`,
 		codes.Internal).
 		After(test.log.EXPECT().Debug(
-			`[Test.345.836] Vocal %d added.`, au10.PostID(987)))
+			`[Test/345/836] Added vocal %d.`, au10.PostID(987)))
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 
-	response, err := test.client.AddVocal(request)
-	test.assert.Nil(response)
+	actualResponse, err := test.client.AddVocal(request)
+	test.assert.Nil(actualResponse)
 	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
 
@@ -764,7 +564,7 @@ func Test_Accesspoint_Client_AddVocal_ExecutionError(t *testing.T) {
 	defer test.close()
 
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to add: "test error" (RPC error %d).`,
+		`[Test/345/836] Failed to add: "test error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 
@@ -779,8 +579,11 @@ func Test_Accesspoint_Client_AddVocal_ExecutionError(t *testing.T) {
 
 	request := &proto.VocalAddRequest{
 		Post: &proto.PostAddRequest{
-			Location: &proto.GeoPoint{},
-			Messages: []*proto.PostAddRequest_MessageDeclaration{}}}
+			Location: &proto.GeoPoint{Latitude: 2987.123}}}
+	vocalDeclaration := &au10.VocalDeclaration{}
+	test.convert.EXPECT().
+		VocalDeclarationFromProto(request, test.user, gomock.Any()).
+		Return(vocalDeclaration)
 
 	response, err := test.client.AddVocal(request)
 	test.assert.Nil(response)
@@ -788,161 +591,180 @@ func Test_Accesspoint_Client_AddVocal_ExecutionError(t *testing.T) {
 }
 
 func Test_Accesspoint_Client_WriteMessageChunk_PermissionDenied(t *testing.T) {
-	testClientMessagePermissionDenied(
-		t,
-		"write",
-		func(client ap.Client, postID, messageID string) (interface{}, error) {
-			return client.WriteMessageChunk(
-				&proto.MessageChunkWriteRequest{PostID: postID, MessageID: messageID})
-		})
+	test := newClientTest(t)
+	defer test.close()
+
+	test.log.EXPECT().Error(
+		`[Test/345/836] Permission denied for message "123"/"456" publishing (RPC error %d).`,
+		codes.PermissionDenied)
+	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
+
+	test.service.EXPECT().GetGlobalProps().MinTimes(1).Return(
+		&proto.Props{MaxChunkSize: 9999})
+
+	publisherMembership := mock_au10.NewMockMembership(test.mock)
+	publisherMembership.EXPECT().IsAllowed(test.rights).Return(false)
+	publisher := mock_au10.NewMockPublisher(test.mock)
+	publisher.EXPECT().GetMembership().Return(publisherMembership)
+	test.service.EXPECT().GetPublisher().Return(publisher)
+
+	response, err := test.client.WriteMessageChunk(
+		&proto.MessageChunkWriteRequest{
+			PostID: "123", MessageID: "456", Chunk: []byte("test data")})
+
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = PermissionDenied desc = PERMISSION_DENIED")
 }
 
 func Test_Accesspoint_Client_WriteMessageChunk_InvalidArgument(t *testing.T) {
-	testClientMessageInvalidArgument(
-		t,
-		"write",
-		func(client ap.Client, postID, messageID string) (interface{}, error) {
-			return client.WriteMessageChunk(
-				&proto.MessageChunkWriteRequest{PostID: postID, MessageID: messageID})
-		})
+	test := newClientTest(t)
+	defer test.close()
+
+	test.service.EXPECT().GetGlobalProps().MinTimes(1).
+		Return(&proto.Props{MaxChunkSize: 1})
+	test.logMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(false)
+	publisherMembership := mock_au10.NewMockMembership(test.mock)
+	publisherMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+	publisher := mock_au10.NewMockPublisher(test.mock)
+	publisher.EXPECT().GetMembership().MinTimes(1).Return(publisherMembership)
+	test.service.EXPECT().GetPublisher().MinTimes(1).Return(publisher)
+
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error(
+		`[Test/345/836] Failed to parse post ID "x"/"y": "test error 1" (RPC error %d).`,
+		codes.InvalidArgument)
+	request := &proto.MessageChunkWriteRequest{
+		PostID: "x", MessageID: "y", Chunk: []byte("T")}
+	test.convert.EXPECT().PostIDFromProto(request.PostID, gomock.Any()).Do(
+		func(source string, err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error 1")
+		}).
+		Return(au10.PostID(1111))
+	response, err := test.client.WriteMessageChunk(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error(
+		`[Test/345/836] Failed to parse message ID "x"/"y": "test error 2" (RPC error %d).`,
+		codes.InvalidArgument)
+	test.convert.EXPECT().PostIDFromProto(request.PostID, gomock.Any()).
+		Return(au10.PostID(1111))
+	test.convert.EXPECT().MessageIDFromProto(request.MessageID, gomock.Any()).Do(
+		func(source string, err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error 2")
+		}).
+		Return(au10.MessageID(2222))
+	response, err = test.client.WriteMessageChunk(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	request.Chunk = []byte("12")
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error(
+		`[Test/345/836] Chunk size for message "x"/"y" is too big: 2 > 1 (RPC error %d).`,
+		codes.InvalidArgument)
+	response, err = test.client.WriteMessageChunk(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
+
+	request.Chunk = []byte{}
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error(
+		`[Test/345/836] Chunk size is empty for message "x"/"y" (RPC error %d).`,
+		codes.InvalidArgument)
+	response, err = test.client.WriteMessageChunk(request)
+	test.assert.Nil(response)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
 }
 
 func Test_Accesspoint_Client_WriteMessageChunk_Execution(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
 
-	message := test.prepareMessageExecution()
+	test.service.EXPECT().GetGlobalProps().MinTimes(1).Return(
+		&proto.Props{MaxChunkSize: 9999})
+
+	publisherMembership := mock_au10.NewMockMembership(test.mock)
+	publisherMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(true)
+	publisher := mock_au10.NewMockPublisher(test.mock)
+	publisher.EXPECT().GetMembership().MinTimes(1).Return(publisherMembership)
+	test.service.EXPECT().GetPublisher().MinTimes(1).Return(publisher)
 
 	request := &proto.MessageChunkWriteRequest{
-		PostID:    "123",
-		MessageID: "456",
-		Chunk:     []byte("some bytes")}
-	test.testNumberOfProtoStructFields(request, 3)
-	message.EXPECT().Append(request.Chunk).Return(nil)
+		PostID: "x", MessageID: "y", Chunk: []byte("Test data")}
+	test.convert.EXPECT().PostIDFromProto(request.PostID, gomock.Any()).
+		MinTimes(1).
+		Return(au10.PostID(1111))
+	test.convert.EXPECT().MessageIDFromProto(request.MessageID, gomock.Any()).
+		MinTimes(1).
+		Return(au10.MessageID(2222))
+
+	test.log.EXPECT().Debug(
+		`[Test/345/836] Written %d bytes for "%s"/"%s".`,
+		len(request.Chunk), "x", "y")
+	publisher.EXPECT().AppendMessage(
+		au10.MessageID(2222), au10.PostID(1111), test.user, request.Chunk).
+		Return(nil)
 	response, err := test.client.WriteMessageChunk(request)
-	test.assert.NotNil(response)
-	test.testNumberOfProtoStructFields(response, 0)
 	test.assert.NoError(err)
+	test.assert.Equal(&proto.MessageChunkWriteResponse{}, response)
 
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to write chunk "123"/"456": "test error" (RPC error %d).`,
+		`[Test/345/836] Failed to write 9 bytes for "x"/"y": "test error" (RPC error %d).`,
 		codes.Internal)
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message.EXPECT().Append(request.Chunk).Return(errors.New("test error"))
+	publisher.EXPECT().AppendMessage(
+		au10.MessageID(2222), au10.PostID(1111), test.user, request.Chunk).
+		Return(errors.New("test error"))
 	response, err = test.client.WriteMessageChunk(request)
 	test.assert.Nil(response)
 	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
 }
 
-func Test_Accesspoint_Client_ReadMessage_PermissionDenied(t *testing.T) {
-	testClientMessagePermissionDenied(
-		t,
-		"read",
-		func(client ap.Client, postID, messageID string) (interface{}, error) {
-			return nil, client.ReadMessage(
-				&proto.MessageReadRequest{PostID: postID, MessageID: messageID}, nil)
-		})
-}
-
 func Test_Accesspoint_Client_ReadMessage_InvalidArgument(t *testing.T) {
-	testClientMessageInvalidArgument(
-		t,
-		"read",
-		func(client ap.Client, postID, messageID string) (interface{}, error) {
-			return nil, client.ReadMessage(
-				&proto.MessageReadRequest{PostID: postID, MessageID: messageID}, nil)
-		})
-}
-
-func Test_Accesspoint_Client_ReadMessage_Execution(t *testing.T) {
 	test := newClientTest(t)
 	defer test.close()
 
-	message := test.prepareMessageExecution()
-	props := &proto.Props{MaxChunkSize: 3}
-	test.service.EXPECT().GetGlobalProps().MinTimes(1).Return(props)
+	test.logMembership.EXPECT().IsAllowed(test.rights).MinTimes(1).Return(false)
 
-	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
-	test.testNumberOfProtoStructFields(request, 2)
-
-	message.EXPECT().GetSize().Return(uint32(7))
-	message.EXPECT().Load(gomock.Any(), uint32(6)).Do(
-		func(buffer *[]byte, offset uint32) {
-			test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
-			*buffer = []byte("6")
+	test.user.EXPECT().BlockByProtocolMismatch()
+	test.log.EXPECT().Error(
+		`[Test/345/836] Failed to parse post ID "x"/"y": "test error 1" (RPC error %d).`,
+		codes.InvalidArgument)
+	request := &proto.MessageReadRequest{PostID: "x", MessageID: "y"}
+	test.convert.EXPECT().PostIDFromProto(request.PostID, gomock.Any()).Do(
+		func(source string, err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error 1")
 		}).
-		Return(nil).
-		After(message.EXPECT().Load(gomock.Any(), uint32(3)).Do(
-			func(buffer *[]byte, offset uint32) {
-				test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
-				*buffer = []byte("345")
-			}).
-			Return(nil).After(
-			message.EXPECT().Load(gomock.Any(), uint32(0)).Do(
-				func(buffer *[]byte, offset uint32) {
-					test.assert.Equal(props.MaxChunkSize, uint32(len(*buffer)))
-					*buffer = []byte("012")
-				}).
-				Return(nil)))
+		Return(au10.PostID(1111))
+	err := test.client.ReadMessage(request, nil)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
 
-	chunkIndexVar := 0
-	chunkIndex := &chunkIndexVar
-	stream := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
-	stream.EXPECT().Send(gomock.Any()).Times(3).
-		Do(func(chunk *proto.MessageChunk) {
-			switch *chunkIndex {
-			case 0:
-				test.assert.Equal([]byte("012"), chunk.Chunk)
-			case 1:
-				test.assert.Equal([]byte("345"), chunk.Chunk)
-			case 2:
-				test.assert.Equal([]byte("6"), chunk.Chunk)
-			default:
-				test.assert.Equal(0, *chunkIndex)
-			}
-			*chunkIndex = *chunkIndex + 1
-		})
-
-	err := test.client.ReadMessage(request, stream)
-	test.assert.NoError(err)
-}
-
-func Test_Accesspoint_Client_ReadMessage_ExecutionErrors(t *testing.T) {
-	test := newClientTest(t)
-	defer test.close()
-
-	message := test.prepareMessageExecution()
-	props := &proto.Props{MaxChunkSize: 3}
-	test.service.EXPECT().GetGlobalProps().MinTimes(1).Return(props)
-
-	request := &proto.MessageReadRequest{PostID: "123", MessageID: "456"}
-	test.testNumberOfProtoStructFields(request, 2)
-	message.EXPECT().GetSize().MinTimes(1).Return(uint32(7))
-
+	test.user.EXPECT().BlockByProtocolMismatch()
 	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to load chunk "123"/"456"/3: "test load error" (RPC error %d).`,
-		codes.Internal)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message.EXPECT().Load(gomock.Any(), uint32(3)).
-		Return(errors.New("test load error")).
-		After(message.EXPECT().Load(gomock.Any(), uint32(0)).Return(nil))
-	stream := mock_proto.NewMockAu10_ReadMessageServer(test.mock)
-	stream.EXPECT().Send(gomock.Any()).Return(nil)
-	err := test.client.ReadMessage(request, stream)
-	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
-
-	test.log.EXPECT().Error(
-		`[Test.345.836] Failed to send chunk "123"/"456"/3: "test send error" (RPC error %d).`,
-		codes.Internal)
-	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
-	message.EXPECT().Load(gomock.Any(), uint32(3)).
-		Return(nil).
-		After(message.EXPECT().Load(gomock.Any(), uint32(0)).Return(nil))
-	stream.EXPECT().Send(gomock.Any()).
-		Return(errors.New("test send error")).
-		After(stream.EXPECT().Send(gomock.Any()).Return(nil))
-	err = test.client.ReadMessage(request, stream)
-	test.assert.EqualError(err, "rpc error: code = Internal desc = INTERNAL")
+		`[Test/345/836] Failed to parse message ID "x"/"y": "test error 2" (RPC error %d).`,
+		codes.InvalidArgument)
+	test.convert.EXPECT().PostIDFromProto(request.PostID, gomock.Any()).
+		Return(au10.PostID(1111))
+	test.convert.EXPECT().MessageIDFromProto(request.MessageID, gomock.Any()).Do(
+		func(source string, err *error) {
+			test.assert.Nil(*err)
+			*err = errors.New("test error 2")
+		}).
+		Return(au10.MessageID(2222))
+	err = test.client.ReadMessage(request, nil)
+	test.assert.EqualError(err,
+		"rpc error: code = InvalidArgument desc = INVALID_ARGUMENT")
 }
 
 func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
@@ -966,8 +788,7 @@ func Test_Accesspoint_Client_GetAllowedMethods(t *testing.T) {
 	test.assert.True(response.ReadLog)
 	test.assert.True(response.ReadPosts)
 	test.assert.True(response.AddVocal)
-
-	test.testNumberOfProtoStructFields(response, 3)
+	testNumberOfProtoStructFields(test.assert, response, 3)
 
 	test.logMembership.EXPECT().IsAllowed(test.rights).Return(false)
 	postsMembership.EXPECT().IsAllowed(test.rights).Return(true)

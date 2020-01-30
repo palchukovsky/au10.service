@@ -1,6 +1,9 @@
 package au10
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Users provides a user database interface.
 type Users interface {
@@ -9,17 +12,22 @@ type Users interface {
 	// Auth verifies user credentials and creates token if credentials
 	// are correct. Returns nil instead token if credentials are wrong.
 	Auth(login string) (User, *string, error)
-	// Find tries to find a user by the login. Returns nil if the user isn't found.
+	// Find tries to find a user by the login. Returns nil if the user isn't
+	// found.
 	FindUser(login string) (User, error)
-	// Find tries to find a user by session token. Returns nil if the user isn't found.
+	// Returns user by ID.
+	GetUser(UserID) (User, error)
+	// Find tries to find a user by session token. Returns nil if the user isn't
+	// found.
 	FindSession(token string) (User, error)
 	// GetAll returns all users from the database.
 	GetAll() []User
 }
 
 // NewUsers creates new users service instance.
-func NewUsers(factory Factory) (Users, error) {
-	result := &users{users: map[string]User{}}
+func NewUsers(service Service) (Users, error) {
+	result := &users{service: service, users: map[string]User{}}
+	factory := result.service.GetFactory()
 	var err error
 	result.newUser(123, "root", "", "", []Rights{NewRights("*", "*")}, factory, &err)
 	result.newUser(234, "domain_root", "x-company", "", []Rights{NewRights("x-company", "*")}, factory, &err)
@@ -34,7 +42,26 @@ func NewUsers(factory Factory) (Users, error) {
 }
 
 type users struct {
-	users map[string]User
+	service Service
+	users   map[string]User
+}
+
+func (users *users) newUser(
+	id UserID,
+	login, domain, group string,
+	rights []Rights,
+	factory Factory,
+	err *error) {
+	if *err != nil {
+		return
+	}
+	var user User
+	user, *err = factory.NewUser(
+		id, login, NewMembership(domain, group), rights, users.service)
+	if *err != nil {
+		return
+	}
+	users.users[login] = user
 }
 
 func (*users) Close() {}
@@ -56,6 +83,15 @@ func (users *users) FindUser(login string) (User, error) {
 	return result, nil
 }
 
+func (users *users) GetUser(id UserID) (User, error) {
+	for _, u := range users.users {
+		if u.GetID() == id {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find user with ID %d", id)
+}
+
 func (users *users) GetAll() []User {
 	result := make([]User, len(users.users))
 	i := 0
@@ -75,21 +111,4 @@ func (users *users) FindSession(token string) (User, error) {
 		return nil, nil
 	}
 	return result, nil
-}
-
-func (users *users) newUser(
-	id UserID,
-	login, domain, group string,
-	rights []Rights,
-	factory Factory,
-	err *error) {
-	if *err != nil {
-		return
-	}
-	var user User
-	user, *err = factory.NewUser(id, login, NewMembership(domain, group), rights)
-	if *err != nil {
-		return
-	}
-	users.users[login] = user
 }
